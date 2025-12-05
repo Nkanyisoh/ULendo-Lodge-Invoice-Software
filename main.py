@@ -16,6 +16,13 @@ load_dotenv()
 app = Flask(__name__, static_folder='assets')
 app.secret_key = 'ulendo_secret_key_2025'
 
+app.config['UPLOAD_DIR'] = 'uploads'
+app.config['OUTPUT_DIR'] = 'generated'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+# Ensure directories exist
+os.makedirs(app.config['OUTPUT_DIR'], exist_ok=True)
+os.makedirs(app.config['UPLOAD_DIR'], exist_ok=True)
+
 # Jinja filter to format ZAR currency with space thousand separators
 @app.template_filter('zar')
 def format_zar(value):
@@ -818,10 +825,4 @@ def parse_existing_invoice(pdf_path):
         raise Exception(f"Failed to parse invoice PDF: {str(e)}")
 
 if __name__ == '__main__':
-    app.config['UPLOAD_DIR'] = 'uploads'
-    app.config['OUTPUT_DIR'] = 'generated'
-    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-    # Ensure directories exist
-    os.makedirs(app.config['OUTPUT_DIR'], exist_ok=True)
-    os.makedirs(app.config['UPLOAD_DIR'], exist_ok=True)
     app.run(debug=True)

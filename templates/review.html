@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Review Invoice</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* Navigation Bar Styles */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(202, 128, 21, 0.2);
+            z-index: 1000;
+            padding: 0;
+        }
+        
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+        }
+        
+        .nav-brand {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ca8015;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .nav-link {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-link:hover {
+            background: rgba(202, 128, 21, 0.1);
+            color: #ca8015;
+        }
+        
+        .nav-link.active {
+            background: #ca8015;
+            color: white;
+        }
+        
+        .nav-link.logout {
+            background: #f44336;
+            color: white;
+        }
+        
+        .nav-link.logout:hover {
+            background: #d32f2f;
+        }
+        
+        @media (max-width: 768px) {
+            .nav-container {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .nav-links {
+                gap: 10px;
+            }
+        }
+        
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #ca8015 0%, #e6a533 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-top: 100px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #ca8015 0%, #e6a533 100%);
+            color: #ffffff;
+            padding: 40px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .header h2 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .company-name {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .form-container {
+            padding: 40px;
+        }
+        
+        .section { 
+            margin: 30px 0; 
+            padding: 25px; 
+            border: none;
+            border-radius: 12px; 
+            background: #f8f9fa;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        }
+        
+        .section h3 {
+            color: #ca8015;
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #ca8015;
+            font-weight: 600;
+        }
+        
+        .field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .field-full {
+            grid-column: 1 / -1;
+        }
+        
+        .field { 
+            margin: 15px 0; 
+            position: relative;
+        }
+        
+        label { 
+            display: block;
+            font-weight: 600; 
+            color: #555;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        input[type="text"], input[type="number"] { 
+            width: 100%; 
+            padding: 12px 15px; 
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            background: white;
+        }
+        
+        input[type="text"]:focus, input[type="number"]:focus {
+            outline: none;
+            border-color: #ca8015;
+            box-shadow: 0 0 0 3px rgba(202, 128, 21, 0.1);
+            transform: translateY(-1px);
+        }
+        
+        .line-item { 
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 20px; 
+            margin: 15px 0; 
+            border-radius: 10px; 
+            border-left: 4px solid #28a745;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+        }
+        
+        .line-item h4 {
+            color: #28a745;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+        
+        .payment-section {
+            background: linear-gradient(135deg, #e8f4fd 0%, #d6eaf8 100%);
+            border-left: 4px solid #3498db;
+        }
+        
+        .booking-section {
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+            border-left: 4px solid #f39c12;
+        }
+        
+        .service-section {
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            border-left: 4px solid #28a745;
+        }
+        
+        button { 
+            background: linear-gradient(135deg, #ca8015 0%, #e6a533 100%);
+            color: #ffffff; 
+            padding: 15px 40px; 
+            border: none; 
+            border-radius: 50px; 
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(202, 128, 21, 0.3);
+            display: block;
+            margin: 30px auto;
+        }
+        
+        button:hover { 
+            background: linear-gradient(135deg, #e6a533 0%, #ca8015 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(202, 128, 21, 0.4);
+        }
+        
+        .total { 
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+            color: white;
+            padding: 25px; 
+            margin: 30px 0; 
+            border-radius: 12px; 
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.3em;
+            box-shadow: 0 5px 20px rgba(40, 167, 69, 0.3);
+        }
+        
+        .line-items-container {
+            background: linear-gradient(135deg, #f1f2f6 0%, #ddd6fe 100%);
+            border-left: 4px solid #8b5cf6;
+        }
+        
+        @media (max-width: 768px) {
+            .field-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .form-container {
+                padding: 20px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h2 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="nav-company">Ulendo Lodge</span>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/manual-entry" class="nav-link">Manual Entry</a>
+                <a href="/edit-invoice" class="nav-link">Edit Invoice</a>
+                <a href="/logout" class="nav-link logout">Logout</a>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="header">
+            <div class="company-name">Ulendo Lodge & Apartments</div>
+            <h2>Review Invoice Data</h2>
+            <p>Review and modify invoice details before generation</p>
+        </div>
+        
+        <div class="form-container">
+            <form action="/generate-invoice" method="post">
+                
+                <div class="section billing-section">
+                    <h3>🏢 Billing Information</h3>
+                    <div class="field field-full">
+                        <label>Invoice Number:</label>
+                        <input type="text" name="invoice_number" value="{{ data.invoice_number or auto_invoice_number }}">
+                    </div>
+                    <div class="field field-full">
+                        <label>Billing Address:</label>
+                        <textarea name="billing_address" rows="4">Travel with Flair (Pty) Ltd
+Private Bag 11291
+Maroelana
+Pretoria
+Email: supplier.invoices@twf.co.za</textarea>
+                    </div>
+                </div>
+
+                <div class="section booking-section">
+                    <h3>📋 Booking Information</h3>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Voucher Number:</label>
+                            <input type="text" name="voucher_number" value="{{ data.voucher_number }}">
+                        </div>
+                        <div class="field">
+                            <label>Length of Stay:</label>
+                            <input type="text" name="length_of_stay" value="{{ data.length_of_stay }}">
+                        </div>
+                    </div>
+                    <div class="field field-full">
+                        <label>Passenger Names:</label>
+                            <input type="text" name="passenger_names" value="{{ data.passenger_names }}">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Check-in Date:</label>
+                            <input type="text" name="check_in" value="{{ data.check_in }}">
+                        </div>
+                        <div class="field">
+                            <label>Check-out Date:</label>
+                            <input type="text" name="check_out" value="{{ data.check_out }}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section service-section">
+                    <h3>🏨 Service Details</h3>
+                    <div class="field field-full">
+                        <label>Description:</label>
+                        <input type="text" name="description" value="{{ data.description }}">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>UOM:</label>
+                            <input type="text" name="uom" value="{{ data.uom }}">
+                        </div>
+                        <div class="field">
+                            <label>Quantity:</label>
+                            <input type="number" name="qty" value="{{ data.qty }}">
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Currency Rate:</label>
+                            <input type="text" name="currency_rate" value="{{ data.currency_rate }}">
+                        </div>
+                        <div class="field">
+                            <label>Rate (Incl.):</label>
+                            <input type="text" name="rate_incl" value="{{ data.rate_incl }}">
+                        </div>
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Max Total:</label>
+                            <input type="text" name="max_total" value="{{ data.max_total }}">
+                        </div>
+                        <div class="field">
+                            <label>Ancillary Charges:</label>
+                            <input type="text" name="ancillary_charges" value="{{ data.ancillary_charges }}">
+                        </div>
+                    </div>
+                    <div class="field field-full">
+                        <label>Ancillary Charges Description:</label>
+                        <input type="text" name="ancillary_description" value="{{ data.ancillary_description or 'Additional Services' }}">
+                    </div>
+                </div>
+
+                {% if data.has_transport %}
+                <div class="section transport-section">
+                    <h3>🚗 Transport Services</h3>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Daily Transport Rate (R):</label>
+                            <input type="number" step="0.01" name="transport_rate" value="{{ data.transport_rate }}">
+                        </div>
+                        <div class="field">
+                            <label>Transport Total:</label>
+                            <input type="number" step="0.01" name="transport_total" value="{{ data.transport_total }}" readonly>
+                        </div>
+                    </div>
+                    <div class="field field-full">
+                        <label>Transport Description:</label>
+                        <input type="text" name="transport_description" value="{{ data.transport_description }}">
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if data.has_ancillary_services %}
+                <div class="section ancillary-section">
+                    <h3>🧺 Ancillary Services</h3>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Personal Services - Laundry (R):</label>
+                            <input type="number" step="0.01" name="ancillary_rate" value="{{ data.ancillary_rate or data.ancillary_total }}">
+                        </div>
+                        <div class="field">
+                            <label>Ancillary Total:</label>
+                            <input type="number" step="0.01" name="ancillary_total" value="{{ data.ancillary_total }}" readonly>
+                        </div>
+                    </div>
+                    <div class="field field-full">
+                        <label>Ancillary Description:</label>
+                        <input type="text" name="ancillary_description" value="{{ data.ancillary_description }}">
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="section additional-services">
+                    <h3>➕ Additional Services</h3>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Service Description:</label>
+                            <input type="text" name="additional_service_desc" placeholder="Enter service description">
+                        </div>
+                        <div class="field">
+                            <label>Quantity:</label>
+                            <input type="number" name="additional_service_qty" value="1" min="1">
+                        </div>
+                        <div class="field">
+                            <label>Unit Price (R):</label>
+                            <input type="number" step="0.01" name="additional_service_rate" value="0.00" min="0">
+                        </div>
+                        <div class="field">
+                            <label>Total:</label>
+                            <input type="number" step="0.01" name="additional_service_total" value="0.00" readonly>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-add-service" onclick="addService()">Add Service</button>
+                </div>
+
+                <div class="section line-items-container">
+                    <h3>📄 Invoice Line Items</h3>
+                    {% for item in data.line_items %}
+                        {% set i = loop.index0 %}
+                        <div class="line-item">
+                            <h4>Line Item {{ i + 1 }}</h4>
+                            <div class="field field-full">
+                                <label>Description:</label>
+                                <input type="text" name="description_{{ i }}" value="{{ item.description }}">
+                            </div>
+                            <div class="field-row">
+                                <div class="field">
+                                    <label>Quantity:</label>
+                                    <input type="number" name="qty_{{ i }}" value="{{ item.qty }}">
+                                </div>
+                                <div class="field">
+                                    <label>Unit Price:</label>
+                                    <input type="number" step="0.01" name="unit_price_{{ i }}" value="{{ item.unit_price }}">
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label>Total:</label>
+                                <input type="number" step="0.01" name="total_{{ i }}" value="{{ item.total }}">
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <div class="total">
+                    <h3>💎 Invoice Total: <span id="invoice-total-display">ZAR {{ "%.2f"|format((data.invoice_total|default(0)|float)) }}</span></h3>
+                </div>
+
+                <button type="submit">🚀 Generate PDF Invoice</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Calculate transport total when rate or length of stay changes
+        document.addEventListener('DOMContentLoaded', function() {
+            function parseNum(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+            function formatZar(n){ return `ZAR ${n.toFixed(2)}`; }
+            function sumLineItemTotals(){
+                return Array.from(document.querySelectorAll('input[name^="total_"]'))
+                    .reduce((sum, el)=> sum + parseNum(el.value), 0);
+            }
+            function updateInvoiceAndDue(){
+                const total = sumLineItemTotals();
+                const disp = document.getElementById('invoice-total-display');
+                if (disp) disp.textContent = formatZar(total);
+            }
+            function attachLineItemListeners(i){
+                const qtyEl = document.querySelector(`input[name="qty_${i}"]`);
+                const rateEl = document.querySelector(`input[name="unit_price_${i}"]`);
+                const totEl = document.querySelector(`input[name="total_${i}"]`);
+                function recalc(){
+                    const q = parseNum(qtyEl?.value || 0); const r = parseNum(rateEl?.value || 0);
+                    if (totEl) totEl.value = (q * r).toFixed(2);
+                    updateInvoiceAndDue();
+                }
+                qtyEl?.addEventListener('input', recalc);
+                rateEl?.addEventListener('input', recalc);
+                totEl?.addEventListener('input', updateInvoiceAndDue);
+            }
+            // Attach to existing items
+            Array.from(document.querySelectorAll('input[name^="description_"]')).forEach((el)=>{
+                const i = el.name.split('_')[1]; attachLineItemListeners(i);
+            });
+            // Update when payment changes
+            const transportRate = document.querySelector('input[name="transport_rate"]');
+            const lengthOfStay = document.querySelector('input[name="length_of_stay"]');
+            const transportTotal = document.querySelector('input[name="transport_total"]');
+            
+            function calculateTransportTotal() {
+                const rate = parseFloat(transportRate.value) || 0;
+                const length = parseInt(lengthOfStay.value) || 1;
+                transportTotal.value = (rate * length).toFixed(2);
+            }
+            
+            transportRate.addEventListener('input', calculateTransportTotal);
+            lengthOfStay.addEventListener('input', calculateTransportTotal);
+            
+            // Calculate ancillary total when rate changes
+            const ancillaryRate = document.querySelector('input[name="ancillary_rate"]');
+            const ancillaryTotal = document.querySelector('input[name="ancillary_total"]');
+            
+            function calculateAncillaryTotal() {
+                const rate = parseFloat(ancillaryRate.value) || 0;
+                ancillaryTotal.value = rate.toFixed(2);
+            }
+            
+            ancillaryRate.addEventListener('input', calculateAncillaryTotal);
+            
+            // Calculate additional service total
+            const serviceQty = document.querySelector('input[name="additional_service_qty"]');
+            const serviceRate = document.querySelector('input[name="additional_service_rate"]');
+            const serviceTotal = document.querySelector('input[name="additional_service_total"]');
+            
+            function calculateServiceTotal() {
+                const qty = parseInt(serviceQty.value) || 0;
+                const rate = parseFloat(serviceRate.value) || 0;
+                serviceTotal.value = (qty * rate).toFixed(2);
+            }
+            
+            serviceQty.addEventListener('input', calculateServiceTotal);
+            serviceRate.addEventListener('input', calculateServiceTotal);
+            
+            // Initialize calculations
+            calculateTransportTotal();
+            calculateAncillaryTotal();
+            calculateServiceTotal();
+            updateInvoiceAndDue();
+        });
+        
+        function addService() {
+            const descEl = document.querySelector('input[name="additional_service_desc"]');
+            const qtyEl = document.querySelector('input[name="additional_service_qty"]');
+            const rateEl = document.querySelector('input[name="additional_service_rate"]');
+            const totalEl = document.querySelector('input[name="additional_service_total"]');
+            const desc = (descEl.value || '').trim();
+            const qty = parseInt(qtyEl.value || '0', 10);
+            const rate = parseFloat(rateEl.value || '0');
+            let total = parseFloat(totalEl.value || '0');
+            if (!total && qty > 0 && rate > 0) total = qty * rate;
+
+            if (desc && qty > 0 && (rate > 0 || total > 0)) {
+                const container = document.querySelector('.line-items-container');
+                const currentIdx = document.querySelectorAll('input[name^="description_"]').length;
+                const i = currentIdx;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'line-item';
+                wrapper.innerHTML = `
+                    <h4>Line Item ${i + 1}</h4>
+                    <div class="field field-full">
+                        <label>Description:</label>
+                        <input type="text" name="description_${i}" value="${desc}">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label>Quantity:</label>
+                            <input type="number" name="qty_${i}" value="${qty}">
+                        </div>
+                        <div class="field">
+                            <label>Unit Price:</label>
+                            <input type="number" step="0.01" name="unit_price_${i}" value="${rate.toFixed(2)}">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Total:</label>
+                        <input type="number" step="0.01" name="total_${i}" value="${total.toFixed(2)}">
+                    </div>`;
+                container.appendChild(wrapper);
+                // Attach listeners and update totals
+                (function(){
+                    function parseNum(v){ const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+                    const qtyEl2 = document.querySelector(`input[name="qty_${i}"]`);
+                    const rateEl2 = document.querySelector(`input[name="unit_price_${i}"]`);
+                    const totEl2 = document.querySelector(`input[name="total_${i}"]`);
+                    function recalc(){
+                        const q = parseNum(qtyEl2?.value || 0); const r = parseNum(rateEl2?.value || 0);
+                        if (totEl2) totEl2.value = (q * r).toFixed(2);
+                        const event = new Event('input'); totEl2?.dispatchEvent(event);
+                    }
+                    qtyEl2?.addEventListener('input', recalc);
+                    rateEl2?.addEventListener('input', recalc);
+                    totEl2?.addEventListener('input', ()=>{
+                        const totalsum = Array.from(document.querySelectorAll('input[name^="total_"]'))
+                            .reduce((s, e)=> s + (parseFloat(e.value)||0), 0);
+                        const disp = document.getElementById('invoice-total-display');
+                        if (disp) disp.textContent = `ZAR ${totalsum.toFixed(2)}`;
+                    });
+                })();
+
+                // Clear the form
+                descEl.value = '';
+                qtyEl.value = '1';
+                rateEl.value = '0.00';
+                totalEl.value = '0.00';
+                // Trigger an initial totals update
+                const totEl = container.querySelector(`input[name="total_${i}"]`);
+                totEl?.dispatchEvent(new Event('input'));
+            } else {
+                alert('Please fill in Description, Quantity and Rate/Total');
+            }
+        }
+    </script>
+</body>
+</html>

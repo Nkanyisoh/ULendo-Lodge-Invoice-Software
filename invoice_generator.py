@@ -4,6 +4,37 @@ import sqlite3
 import os
 import re
 
+def extract_text_with_words(page):
+    """
+    Extract text from PDF page using word-level extraction for better spacing.
+    This method uses pdfplumber's extract_words() to get individual words based on
+    character positions, preserving natural word boundaries from the PDF structure.
+    """
+    words = page.extract_words(
+        x_tolerance=3,
+        y_tolerance=3,
+        keep_blank_chars=False
+    )
+    
+    if not words:
+        return page.extract_text() or ""
+    
+    # Group words by line (similar y-coordinates)
+    lines = {}
+    for word in words:
+        y_key = round(word['top'] / 5) * 5  # Group by ~5pt vertical bands
+        if y_key not in lines:
+            lines[y_key] = []
+        lines[y_key].append((word['x0'], word['text']))
+    
+    # Sort lines by y-position, then words within each line by x-position
+    result_lines = []
+    for y_key in sorted(lines.keys()):
+        line_words = sorted(lines[y_key], key=lambda w: w[0])
+        result_lines.append(' '.join(w[1] for w in line_words))
+    
+    return '\n'.join(result_lines)
+
 def clean_company_info(text):
     """
     Clean company information and addresses extracted from PDFs
@@ -49,6 +80,122 @@ def clean_pdf_text(text):
     if not text:
         return text
     
+    # Define common fixes dictionary outside the loop (static data)
+    common_fixes = {
+        # General fixes (from previous iterations)
+        'V oucher': 'Voucher', 'B ill': 'Bill', 'B ack': 'Back', 'A gent': 'Agent',
+        'B illing': 'Billing', 'A ddress': 'Address', 'T ravel': 'Travel', 'W ith': 'With',
+        'F lair': 'Flair', 'P ty': 'Pty', 'H eadoffice': 'Head Office', 'T elephone': 'Telephone',
+        'N umber': 'Number', 'V at': 'VAT', 'N r': 'Nr', 'F ax': 'Fax',
+        'P rivate': 'Private', 'B ag': 'Bag', 'I ssue': 'Issue', 'D ate': 'Date',
+        'I ssued': 'Issued', 'B y': 'By', 'R ef': 'Ref', 'E mail': 'Email',
+        'O rder': 'Order', 'C ost': 'Cost', 'C enter': 'Center', 'A sset': 'Asset',
+        'M anager': 'Manager', 'P assenger': 'Passenger',
+        'D ebtor': 'Debtor', 'A cc': 'Acc', 'N o': 'No', 'I RD': 'IRD',
+        'N ame': 'Name', 'I ata': 'IATA', 'U lendo': 'Ulendo',
+        'L odge': 'Lodge', 'A nd': 'And', 'A partment': 'Apartment', 'R eservation': 'Reservation',
+        'T habo': 'Thabo', 'S inclair': 'Sinclair', 'R oad': 'Road', 'L ambton': 'Lambton',
+        'P ayment': 'Payment', 'I nstruction': 'Instruction', 'G ermiston': 'Germiston',
+        'B illback': 'Billback', 'E xtras': 'Extras', 'U nless': 'Unless',
+        'D irect': 'Direct', 'C lient': 'Client', 'Q t': 'Qt', 'S upplier': 'Supplier',
+        'C ode': 'Code', 'C heck': 'Check', 'L engthof': 'Length of', 'S tay': 'Stay',
+        'N umberof': 'Number of', 'R ooms': 'Rooms', 'D escription': 'Description',
+        'Q ty': 'Qty', 'C urrency': 'Currency', 'R ate': 'Rate', 'I ncl': 'Incl',
+        'M ax': 'Max', 'T otal': 'Total', 'A ccommodation': 'Accommodation',
+        'R oombooked': 'Room booked', 'S ingle': 'Single', 'R ateincludes': 'Rate includes',
+        'R oom': 'Room', 'N ight': 'Night', 'D inner': 'Dinner', 'B reakfast': 'Breakfast',
+        'L unch': 'Lunch', 'A ncillary': 'Ancillary', 'C harges': 'Charges',
+        'P ersonal': 'Personal', 'S erv': 'Serv', 'L aundry': 'Laundry', 'U nit': 'Unit',
+        'V oucher': 'Voucher', 'R emarks': 'Remarks', 'T hequotedrate': 'The quoted rate',
+        'V AT': 'VAT', 'tourismlevy': 'tourism levy', 'S pecial': 'Special',
+        'I nstructions': 'Instructions', 'A nyextras': 'Any extras', 'traveller': 'traveller',
+        'G eneral': 'General', 'T erms': 'Terms', 'C onditions': 'Conditions',
+        'vouchervalid': 'voucher valid', 'specifiedservices': 'specified services',
+        'A nyservices': 'Any services', 'required': 'required',
+        'coveredbythevoucher': 'covered by the voucher', 'billeddirectly': 'billed directly',
+        'R eferto': 'Refer to', 'TWF': 'TWF',
+        'www': 'www', 'travelwithflair': 'travelwithflair', 'co': 'co', 'za': 'za',
+        'terms': 'terms', 'conditions': 'conditions', 'K indlyremember': 'Kindly remember',
+        'identitydocument': 'identity document', 'presentit': 'present it',
+        'check': 'check', 'aboveaddress': 'above address', 'amended': 'amended',
+        'I mmigration': 'Immigration', 'A ct': 'Act', 'relevantregulations': 'relevant regulations',
+        'legalrequirement': 'legal requirement', 'accommodationsuppliers': 'accommodation suppliers',
+        'registercontaining': 'register containing', 'detailsofallguests': 'details of all guests',
+        'R egulations': 'Regulations', 'T hebearer': 'The bearer',
+        'vouchermaynot': 'voucher may not', 'handedanyform': 'handed any form',
+        'cashinlieu': 'cash in lieu', 'meals': 'meals', 'C reated': 'Created',
+        'J ul': 'Jul',
+        # Specific fixes from debug output (more aggressive)
+        'BillingAddress': 'Billing Address',
+        'TravelwithFlair': 'Travel with Flair',
+        'PrivateBag': 'Private Bag',
+        'UlendoLodge': 'Ulendo Lodge',
+        'Apartments': 'Apartments',
+        '10SinclairRoad': '10 Sinclair Road',
+        '05December2025': '05 December 2025',
+        'InvoiceNO': 'Invoice NO',
+        'Date:': 'Date:',
+        'GuestName': 'Guest Name',
+        'TANYAMPELEGENGKEKANA': 'TANYAMPELEGENG KEKANA',
+        'SERVICES&CHARGES': 'SERVICES & CHARGES',
+        'DESCRIPTIONQTYUNITTOTALPRICE': 'DESCRIPTION QTY UNIT PRICE TOTAL',
+        'Roombooked': 'Room booked',
+        'RateincludesDinner': 'Rate includes Dinner',
+        'Breakfast&Lunch': 'Breakfast & Lunch',
+        'PersonalServices': 'Personal Services',
+        'INVOICETOTAL': 'INVOICE TOTAL',
+        'PAYMENTDETAILS': 'PAYMENT DETAILS',
+        'IMPORTANTNOTES': 'IMPORTANT NOTES',
+        'AccountName': 'Account Name',
+        'UlendoLodgeAndApartments': 'Ulendo Lodge And Apartments',
+        'ProofofPayment': 'Proof of Payment',
+        'Sendtoinfo@ulendolodge.com': 'Send to info@ulendolodge.com',
+        'BankName': 'Bank Name',
+        'StandardBankAccountNumber': 'Standard Bank Account Number',
+        'BranchCode': 'Branch Code',
+        'POLICIES&INFORMATION': 'POLICIES & INFORMATION',
+        'HouseRules': 'House Rules',
+        'Check-intime': 'Check-in time',
+        'isanytimeafter14:00': 'is any time after 14:00',
+        'Check-outis10:00thefollowingday': 'Check-out is 10:00 the following day',
+        'Please respectotherGuestsintermsofnoise.': 'Please respect other Guests in terms of noise.',
+        'Lapaandbraaiareasmaynotbeoccupiedafter10pm.': 'Lapa and braai areas may not be occupied after 10pm.',
+        'RefundPolicy': 'Refund Policy',
+        '100% Refundwillbegrantedwith72hoursnoticeofcheckin.': '100% Refund will be granted with 72 hours notice of check in.',
+        '50% Refundwillbegrantedwith24hoursnoticeofcheckin.': '50% Refund will be granted with 24 hours notice of check in.',
+        'Failuretocheckinwillresultinzerorefundastheroomwasreservedandnotoccupied.': 'Failure to check in will result in zero refund as the room was reserved and not occupied.',
+        'PublicLiability': 'Public Liability',
+        'UlendoLodgehasthe rightto reserveadmission.': 'Ulendo Lodge has the right to reserve admission.',
+        'We arenotresponsible foranydamage/lossofany kindtovisitor property.': 'We are not responsible for any damage/loss of any kind to visitor property.',
+        'Visitorswillbeheldaccountableforanydamagestobusinessproperty.': 'Visitors will be held accountable for any damages to business property.',
+        # More specific text observed in the output with single-character spacing issues
+        'SE V RICES': 'SERVICES', 'CHA G RES': 'CHARGES',
+        'UNIT DESC I RPTION': 'UNIT DESCRIPTION', 'QTY TOTAL P I RCE': 'QTY TOTAL PRICE',
+        'P I RCE': 'PRICE',
+        'N one': 'None',
+        'S ervices': 'Services',
+        'IMPO T RANT': 'IMPORTANT',
+        'INFO M RATION': 'INFORMATION',
+        'H ouse R ules': 'House Rules',
+        'C heck - in': 'Check-in',
+        'C heck - out': 'Check-out',
+        'G uest N ame': 'Guest Name',
+        'INV - ': 'INV-',
+        'N O': 'NO',
+        'Total P rice': 'Total Price',
+        # Voucher remarks specific fixes (from user-provided examples)
+        '*Laundry Transport fromguesthousetotrainingcenterr300.00PERDAY': '* Laundry Transport from guest house to training center r300.00 PER DAY',
+        'Thequotedrateonthisdocument isinclusive ofVATandtourism levy.': 'The quoted rate on this document is inclusive of VAT and tourism levy.',
+        '*Anyextrasareforaccount ofthetraveller.': '* Any extras are for account of the traveller.',
+        'General TermsandConditions': 'General Terms and Conditions',
+        'Voucher validforspecified services only.Anyservices required, notcovered bythevoucher, tobebilleddirectlytothetraveller.': 'Voucher valid for specified services only. Any services required, not covered by the voucher, to be billed directly to the traveller.',
+        'RefertoTWFTermsandConditions onwww.travelwithflair.co.za/terms- and-conditions': 'Refer to TWF Terms and Conditions on www.travelwithflair.co.za/terms-and-conditions',
+        'Kindlyremember tobringyouridentity document andpresent ituponcheck-inattheaboveaddress. Thisistocomply withthe': 'Kindly remember to bring your identity document and present it upon check-in at the above address. This is to comply with the',
+        'amended Immigration Act13of2002andrelevant regulations. Itisalegalrequirement forallaccommodation suppliers tokeepa': 'amended Immigration Act 13 of 2002 and relevant regulations. It is a legal requirement for all accommodation suppliers to keep a',
+        'register containing detailsofallguestsintermsofImmigration Regulations 2014': 'register containing details of all guests in terms of Immigration Regulations 2014',
+        'NOTE:Thebearerofthisvoucher maynotbehandedanyformofcashinlieuofanymeals.': 'NOTE: The bearer of this voucher may not be handed any form of cash in lieu of any meals.'
+    }
+    
     # Process text line by line to preserve original line breaks
     cleaned_lines = []
     for line in text.splitlines():
@@ -63,7 +210,7 @@ def clean_pdf_text(text):
         # Add space between a letter/number and punctuation if missing (e.g., 'word.' -> 'word .')
         cleaned_line = re.sub(r'([A-Za-z0-9])([.,:;!?])', r'\1 \2', cleaned_line)
 
-        # NEW: Aggressively remove spaces within numbers/alphanumeric codes where they don't belong
+        # Phase 1b: Aggressively remove spaces within numbers/alphanumeric codes where they don't belong
         # Example: '1688 . 50' -> '1688.50'
         cleaned_line = re.sub(r'(\d+)\s*\.\s*(\d+)', r'\1.\2', cleaned_line)
         # Example: 'R 35 758' -> 'R35758' (for currency parsing later)
@@ -71,126 +218,11 @@ def clean_pdf_text(text):
         # Example: 'G 846886' -> 'G846886' for voucher numbers
         cleaned_line = re.sub(r'([A-Z])\s*(\d+)', r'\1\2', cleaned_line)
 
-        # Phase 2: Specific fixes for common concatenated phrases observed in debug outputs
-        # (These are for semantic fixes that general rules might miss)
-        common_fixes = {
-            # General fixes (from previous iterations)
-            'V oucher': 'Voucher', 'B ill': 'Bill', 'B ack': 'Back', 'A gent': 'Agent',
-            'B illing': 'Billing', 'A ddress': 'Address', 'T ravel': 'Travel', 'W ith': 'With',
-            'F lair': 'Flair', 'P ty': 'Pty', 'H eadoffice': 'Head Office', 'T elephone': 'Telephone',
-            'N umber': 'Number', 'V at': 'VAT', 'N r': 'Nr', 'F ax': 'Fax',
-            'P rivate': 'Private', 'B ag': 'Bag', 'I ssue': 'Issue', 'D ate': 'Date',
-            'I ssued': 'Issued', 'B y': 'By', 'R ef': 'Ref', 'E mail': 'Email',
-            'O rder': 'Order', 'C ost': 'Cost', 'C enter': 'Center', 'A sset': 'Asset',
-            'M anager': 'Manager', 'P assenger': 'Passenger', 'N umber': 'Number',
-            'D ebtor': 'Debtor', 'A cc': 'Acc', 'N o': 'No', 'I RD': 'IRD',
-            'D ebtor': 'Debtor', 'N ame': 'Name', 'I ata': 'IATA', 'U lendo': 'Ulendo',
-            'L odge': 'Lodge', 'A nd': 'And', 'A partment': 'Apartment', 'R eservation': 'Reservation',
-            'T habo': 'Thabo', 'S inclair': 'Sinclair', 'R oad': 'Road', 'L ambton': 'Lambton',
-            'P ayment': 'Payment', 'I nstruction': 'Instruction', 'G ermiston': 'Germiston',
-            'B illback': 'Billback', 'E xtras': 'Extras', 'U nless': 'Unless',
-            'D irect': 'Direct', 'C lient': 'Client', 'Q t': 'Qt', 'S upplier': 'Supplier',
-            'C ode': 'Code', 'C heck': 'Check', 'L engthof': 'Length of', 'S tay': 'Stay',
-            'N umberof': 'Number of', 'R ooms': 'Rooms', 'D escription': 'Description',
-            'Q ty': 'Qty', 'C urrency': 'Currency', 'R ate': 'Rate', 'I ncl': 'Incl',
-            'M ax': 'Max', 'T otal': 'Total', 'A ccommodation': 'Accommodation',
-            'R oombooked': 'Room booked', 'S ingle': 'Single', 'R ateincludes': 'Rate includes',
-            'R oom': 'Room', 'N ight': 'Night', 'D inner': 'Dinner', 'B reakfast': 'Breakfast',
-            'L unch': 'Lunch', 'A ncillary': 'Ancillary', 'C harges': 'Charges',
-            'P ersonal': 'Personal', 'S erv': 'Serv', 'L aundry': 'Laundry', 'U nit': 'Unit',
-            'V oucher': 'Voucher', 'R emarks': 'Remarks', 'T hequotedrate': 'The quoted rate',
-            'V AT': 'VAT', 'tourismlevy': 'tourism levy', 'S pecial': 'Special',
-            'I nstructions': 'Instructions', 'A nyextras': 'Any extras', 'traveller': 'traveller',
-            'G eneral': 'General', 'T erms': 'Terms', 'C onditions': 'Conditions',
-            'vouchervalid': 'voucher valid', 'specifiedservices': 'specified services',
-            'A nyservices': 'Any services', 'required': 'required',
-            'coveredbythevoucher': 'covered by the voucher', 'billeddirectly': 'billed directly',
-            'traveller': 'traveller', 'R eferto': 'Refer to', 'TWF': 'TWF',
-            'www': 'www', 'travelwithflair': 'travelwithflair', 'co': 'co', 'za': 'za',
-            'terms': 'terms', 'conditions': 'conditions', 'K indlyremember': 'Kindly remember',
-            'identitydocument': 'identity document', 'presentit': 'present it',
-            'check': 'check', 'aboveaddress': 'above address', 'amended': 'amended',
-            'I mmigration': 'Immigration', 'A ct': 'Act', 'relevantregulations': 'relevant regulations',
-            'legalrequirement': 'legal requirement', 'accommodationsuppliers': 'accommodation suppliers',
-            'registercontaining': 'register containing', 'detailsofallguests': 'details of all guests',
-            'I mmigration': 'Immigration', 'R egulations': 'Regulations', 'T hebearer': 'The bearer',
-            'vouchermaynot': 'voucher may not', 'handedanyform': 'handed any form',
-            'cashinlieu': 'cash in lieu', 'meals': 'meals', 'C reated': 'Created',
-            'J ul': 'Jul',
-            
-            # Specific fixes from debug output (more aggressive)
-            'BillingAddress': 'Billing Address',
-            'TravelwithFlair': 'Travel with Flair',
-            'PrivateBag': 'Private Bag',
-            'UlendoLodge': 'Ulendo Lodge',
-            'Apartments': 'Apartments',
-            '10SinclairRoad': '10 Sinclair Road',
-            '05December2025': '05 December 2025',
-            'InvoiceNO': 'Invoice NO',
-            'Date:': 'Date:',
-            'GuestName': 'Guest Name',
-            'TANYAMPELEGENGKEKANA': 'TANYAMPELEGENG KEKANA', # Fix for specific name
-            'SERVICES&CHARGES': 'SERVICES & CHARGES',
-            'DESCRIPTIONQTYUNITTOTALPRICE': 'DESCRIPTION QTY UNIT PRICE TOTAL',
-            'Roombooked': 'Room booked',
-            'RateincludesDinner': 'Rate includes Dinner',
-            'Breakfast&Lunch': 'Breakfast & Lunch',
-            'PersonalServices': 'Personal Services',
-            'INVOICETOTAL': 'INVOICE TOTAL',
-            'PAYMENTDETAILS': 'PAYMENT DETAILS',
-            'IMPORTANTNOTES': 'IMPORTANT NOTES',
-            'AccountName': 'Account Name',
-            'UlendoLodgeAndApartments': 'Ulendo Lodge And Apartments',
-            'ProofofPayment': 'Proof of Payment',
-            'Sendtoinfo@ulendolodge.com': 'Send to info@ulendolodge.com',
-            'BankName': 'Bank Name',
-            'StandardBankAccountNumber': 'Standard Bank Account Number',
-            'BranchCode': 'Branch Code',
-            'POLICIES&INFORMATION': 'POLICIES & INFORMATION',
-            'HouseRules': 'House Rules',
-            'Check-intime': 'Check-in time',
-            'isanytimeafter14:00': 'is any time after 14:00',
-            'Check-outis10:00thefollowingday': 'Check-out is 10:00 the following day',
-            'Please respectotherGuestsintermsofnoise.': 'Please respect other Guests in terms of noise.',
-            'Lapaandbraaiareasmaynotbeoccupiedafter10pm.': 'Lapa and braai areas may not be occupied after 10pm.',
-            'RefundPolicy': 'Refund Policy',
-            '100% Refundwillbegrantedwith72hoursnoticeofcheckin.': '100% Refund will be granted with 72 hours notice of check in.',
-            '50% Refundwillbegrantedwith24hoursnoticeofcheckin.': '50% Refund will be granted with 24 hours notice of check in.',
-            'Failuretocheckinwillresultinzerorefundastheroomwasreservedandnotoccupied.': 'Failure to check in will result in zero refund as the room was reserved and not occupied.',
-            'PublicLiability': 'Public Liability',
-            'UlendoLodgehasthe rightto reserveadmission.': 'Ulendo Lodge has the right to reserve admission.',
-            'We arenotresponsible foranydamage/lossofany kindtovisitor property.': 'We are not responsible for any damage/loss of any kind to visitor property.',
-            'Visitorswillbeheldaccountableforanydamagestobusinessproperty.': 'Visitors will be held accountable for any damages to business property.',
-            # More specific text observed in the output with single-character spacing issues
-            'SE V RICES': 'SERVICES', 'CHA G RES': 'CHARGES', 
-            'UNIT DESC I RPTION': 'UNIT DESCRIPTION', 'QTY TOTAL P I RCE': 'QTY TOTAL PRICE',
-            'P I RCE': 'PRICE', # Adjusting this as per output
-            'A ccommodation': 'Accommodation',
-            'R oombooked': 'Room booked',
-            'N one': 'None',
-            'R ateincludes': 'Rate includes',
-            'D inner': 'Dinner',
-            'B reakfast': 'Breakfast',
-            'L unch': 'Lunch',
-            'P ersonal': 'Personal',
-            'S ervices': 'Services',
-            'L aundry': 'Laundry',
-            'IMPO T RANT': 'IMPORTANT',
-            'INFO M RATION': 'INFORMATION',
-            'H ouse R ules': 'House Rules',
-            'C heck - in': 'Check-in',
-            'C heck - out': 'Check-out',
-            'D ate': 'Date',
-            'G uest N ame': 'Guest Name',
-            'INV - ': 'INV-', # Ensure consistent invoice number prefix
-            'N O': 'NO', 
-            'Total P rice': 'Total Price' # New fix from refined header
-        }
-        
+        # Phase 2: Apply specific fixes for common concatenated phrases
         for wrong, correct in common_fixes.items():
             cleaned_line = cleaned_line.replace(wrong, correct)
-        
-        # Phase 3: Normalize whitespace within the line (replace multiple spaces with a single space and strip leading/trailing spaces)
+
+        # Phase 3: Normalize whitespace within the line (replace multiple spaces with a single space and strip)
         cleaned_lines.append(re.sub(r'\s+', ' ', cleaned_line.strip()))
 
     return '\n'.join(cleaned_lines)
@@ -198,7 +230,7 @@ def clean_pdf_text(text):
 def parse_voucher_pdf(pdf_path):
     data = {}
     with pdfplumber.open(pdf_path) as pdf:
-        text = pdf.pages[0].extract_text()
+        text = extract_text_with_words(pdf.pages[0])
     
     # Clean the extracted text to fix spacing issues
     text = clean_pdf_text(text)

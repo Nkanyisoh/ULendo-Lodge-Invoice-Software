@@ -199,8 +199,15 @@ def parse_voucher_pdf(pdf_path):
                     data["stay_details"] = {}
                 data["stay_details"]["length"] = length_match2.group(1)
         
-        # Look for room type
-        if "Double.Rate" in text:
+        # Look for room type - extract from accommodation description line
+        # Pattern matches: "Accommodation -Roombooked, Single.Rateincludes" or ", Double."
+        room_type_match = re.search(r'Accommodation.*?,\s*(Single|Double)\.', text, re.IGNORECASE)
+        if room_type_match:
+            if not data.get("stay_details"):
+                data["stay_details"] = {}
+            data["stay_details"]["room_type"] = room_type_match.group(1).capitalize()  # Ensure proper capitalization
+        elif "Double.Rate" in text:
+            # Fallback for old format
             if not data.get("stay_details"):
                 data["stay_details"] = {}
             data["stay_details"]["room_type"] = "Double"
@@ -351,6 +358,41 @@ def convert_to_invoice_format(data):
     
     # Note: Meal plan (DBB+L) is excluded from services as per requirements
     
+    # Extract transport from voucher remarks if not already captured
+    # Assuming 'remarks' is a key in 'data' and 'voucher' under 'remarks' is a list of strings
+    voucher_remarks_list = data.get('remarks', {}).get('voucher', [])
+    voucher_remarks_text = " ".join(voucher_remarks_list) # Join all remarks into a single string
+    
+    transport_match = re.search(r'(Laundry Transport.*?)(?:\s|\b)([rR@]?\d{1,3}(?:[\s,]\d{3})*(?:\.\d{2})?)(?:\sPER\sDAY)?', voucher_remarks_text)
+    
+    if transport_match:
+        transport_description = transport_match.group(1).strip()
+        transport_price_str = transport_match.group(2).replace('R', '').replace('r', '').replace('@', '').replace(',', '').strip()
+        
+        try:
+            transport_price = float(transport_price_str)
+            
+            # Check if this transport item already exists in line_items to avoid duplication
+            existing_transport_item = next((item for item in invoice_data['line_items'] if "Laundry Transport" in item['description']), None)
+            
+            if not existing_transport_item:
+                # Add as a new line item
+                invoice_data['line_items'].append({
+                    'description': _normalize_text(transport_description),
+                    'qty': 1, # Assuming 1 for now, adjust if pattern implies otherwise
+                    'unit_price': transport_price,
+                    'total': transport_price
+                })
+                # Update total for the invoice
+                invoice_data['invoice_total'] += transport_price
+                invoice_data['has_transport'] = True # Mark that transport was found
+                # Optionally store details if needed for other UI elements
+                invoice_data['transport_description'] = transport_description
+                invoice_data['transport_rate'] = f"{transport_price:.2f}"
+                invoice_data['transport_total'] = f"{transport_price:.2f}"
+        except ValueError:
+            pass # Log error if price parsing fails
+
     # Calculate invoice total
     invoice_data['invoice_total'] = sum(item['total'] for item in invoice_data['line_items'])
     

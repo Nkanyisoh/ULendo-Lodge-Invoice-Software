@@ -6,7 +6,8 @@ from voucher_parser import parse_voucher_pdf
 from invoice_generator import (
     clean_pdf_text,
     get_next_invoice_number,
-    cleanup_old_files
+    cleanup_old_files,
+    extract_text_with_words
 )
 import os
 import re
@@ -175,7 +176,7 @@ def generate_invoice():
         raw_inv = request.form.get('invoice_number').strip()
         inv_num = raw_inv if raw_inv.startswith('INV-') else f"INV-{raw_inv}"
     else:
-        inv_num = f"INV-{get_next_invoice_number()}"
+        inv_num = get_next_invoice_number()  # Already returns INV-XXXXXX format
     
     # Add the determined invoice number to invoice_data for use in send_file
     invoice_data['invoice_number'] = inv_num
@@ -286,8 +287,17 @@ def parse_existing_invoice(pdf_path):
         with pdfplumber.open(pdf_path) as pdf:
             raw_text = ""
             for page in pdf.pages:
-                # Accumulate text from each page, preserving original line breaks and adding a newline between pages
-                raw_text += (page.extract_text(x_tolerance=1) or "") + "\n"
+                # Use word-level extraction for better spacing preservation
+                page_text = extract_text_with_words(page)
+                raw_text += (page_text or "") + "\n"
+            
+            # Debug: Print raw text to see what pdfplumber actually extracted
+            print(f"DEBUG: --- RAW PDF Text (before cleaning) ---")
+            # Find and print the line with "Accommodation" to see what was extracted
+            for line in raw_text.splitlines():
+                if 'Accommodation' in line or 'Room booked' in line:
+                    print(f"RAW LINE: '{line}'")
+            print(f"--- END RAW PDF Text ---")
             
             # Apply comprehensive cleaning to the *entire* extracted text after all pages are processed
             from invoice_generator import clean_pdf_text
@@ -360,6 +370,10 @@ def parse_existing_invoice(pdf_path):
                         print("DEBUG: Length of Stay not found via fallback pattern.")
 
                 # Extract line items from the services table
+                # Use raw_text for line items to preserve exact description content (before cleaning)
+                # Only normalize whitespace for regex matching, but preserve actual text content
+                raw_lines = raw_text.splitlines()
+                # Also keep cleaned_lines for finding table boundaries
                 lines = cleaned_text.splitlines()
                 in_table = False
                 found_services_header = False
@@ -417,14 +431,28 @@ def parse_existing_invoice(pdf_path):
                             print(f"DEBUG: Found table footer/end content at line {i}: '{line_stripped}'")
                             continue # Continue to parse other sections like total/payment
                         
-                        # Try to parse line item - more robust pattern after cleaning
+                        # Try to parse line item - use cleaned text for pattern matching, but extract description from raw text
                         # The description can be multi-word, then QTY, then R<PRICE>, then R<TOTAL>
                         # Example: Accommodation - Room booked , None . Rate includes Dinner , Breakfast & Lunch 21 R1688.50 R35458.50
                         line_item_match = re.search(r'(.+?)\s+(\d+)\s*R([\d.]+)\s*R([\d.]+)', line_stripped)
                         
                         if line_item_match:
                             try:
-                                description = line_item_match.group(1).strip()
+                                # Extract description from raw text to preserve exact content (before cleaning)
+                                # Find the corresponding raw line and extract description from it
+                                raw_line = raw_lines[i].strip() if i < len(raw_lines) else line_stripped
+                                print(f"DEBUG: Raw line {i}: '{raw_line}'")
+                                print(f"DEBUG: Cleaned line {i}: '{line_stripped}'")
+                                # Use regex to find the description part in raw line, matching the same pattern
+                                raw_line_match = re.search(r'(.+?)\s+(\d+)\s*R([\d.]+)\s*R([\d.]+)', raw_line)
+                                if raw_line_match:
+                                    description = raw_line_match.group(1).strip()
+                                    print(f"DEBUG: Extracted description from RAW line: '{description}'")
+                                else:
+                                    # Fallback to cleaned text if raw line doesn't match
+                                    description = line_item_match.group(1).strip()
+                                    print(f"DEBUG: Extracted description from CLEANED line (fallback): '{description}'")
+                                
                                 qty = int(line_item_match.group(2))
                                 unit_price = float(line_item_match.group(3).replace(',', ''))
                                 total = float(line_item_match.group(4).replace(',', ''))

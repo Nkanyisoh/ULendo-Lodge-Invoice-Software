@@ -6,7 +6,8 @@ from voucher_parser import parse_voucher_pdf
 from invoice_generator import (
     clean_pdf_text,
     get_next_invoice_number,
-    cleanup_old_files
+    cleanup_old_files,
+    extract_text_with_words
 )
 import os
 import re
@@ -147,15 +148,31 @@ def review():
                 data[f'additional_service_total_{i}'] = request.args.get(f'additional_service_total_{i}', '')
 
     # The auto_invoice_number will always come from query parameters (either newly generated or extracted from PDF)
-    auto_inv = request.args.get('auto_invoice_number', get_next_invoice_number())
+    auto_inv_from_args = request.args.get('auto_invoice_number')
+    # #region agent log
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"main.py:150","message":"review - auto_invoice_number from args","data":{"auto_inv_from_args":auto_inv_from_args},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
+    # #endregion
+    auto_inv = auto_inv_from_args if auto_inv_from_args else get_next_invoice_number()
 
     # If the retrieved data already has an invoice_number, prioritize it over auto_inv if auto_inv is a newly generated one.
     # This ensures that when editing, the original invoice number from the PDF is retained.
     if data.get('invoice_number_from_pdf') and not request.args.get('auto_invoice_number'):
         auto_inv = data['invoice_number_from_pdf']
 
+    # #region agent log
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"main.py:157","message":"review - before prefix check","data":{"auto_inv":auto_inv,"starts_with_inv":auto_inv.startswith('INV-') if auto_inv else False},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
+    # #endregion
     if auto_inv and not auto_inv.startswith('INV-'):
         auto_inv = f"INV-{auto_inv}"
+    # #region agent log
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"main.py:158","message":"review - after prefix check","data":{"auto_inv":auto_inv},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
+    # #endregion
 
     print(f"DEBUG: Final data sent to template in review route: {data}")
     print(f"DEBUG: Auto-invoice number sent to template: {auto_inv}")
@@ -298,10 +315,21 @@ def manual_entry():
         
         data['line_items'] = line_items
         data['invoice_total'] = invoice_total
+        # #region agent log
+        with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+            import json
+            f.write(json.dumps({"location":"main.py:301","message":"manual_entry POST - invoice_number from form","data":{"invoice_number":data.get('invoice_number')},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+"\n")
+        # #endregion
         return redirect(url_for('review', **data))
     
     # Supply an auto-generated invoice number for manual entry form too
-    auto_inv = f"INV-{get_next_invoice_number()}"
+    # #region agent log
+    next_inv_raw = get_next_invoice_number()  # Already returns INV-XXXXXX
+    auto_inv = next_inv_raw
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"main.py:304","message":"manual_entry GET - get_next_invoice_number result","data":{"next_inv_raw":next_inv_raw,"auto_inv":auto_inv},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+"\n")
+    # #endregion
     # Provide an empty data object to avoid Jinja 'data is undefined' on GET
     return render_template('manual.html', auto_invoice_number=auto_inv, data={})
 
@@ -410,11 +438,26 @@ def generate_invoice():
 
     # Determine invoice number: use edited value if provided, else auto-generate
     # Ensure INV- prefix is always present
+    # #region agent log
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"main.py:413","message":"generate_invoice - invoice_number from form","data":{"invoice_number":data.get('invoice_number')},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
+    # #endregion
     if data.get('invoice_number'):
         raw_inv = data.get('invoice_number').strip()
+        # #region agent log
+        with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+            import json
+            f.write(json.dumps({"location":"main.py:415","message":"generate_invoice - before prefix check","data":{"raw_inv":raw_inv,"starts_with_inv":raw_inv.startswith('INV-')},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
+        # #endregion
         inv_num = raw_inv if raw_inv.startswith('INV-') else f"INV-{raw_inv}"
+        # #region agent log
+        with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+            import json
+            f.write(json.dumps({"location":"main.py:415","message":"generate_invoice - after prefix check","data":{"inv_num":inv_num},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
+        # #endregion
     else:
-        inv_num = f"INV-{get_next_invoice_number()}"
+        inv_num = get_next_invoice_number()  # Already returns INV-XXXXXX format
     
     # Add the determined invoice number to invoice_data for use in send_file
     invoice_data['invoice_number'] = inv_num
@@ -493,7 +536,7 @@ def edit_invoice():
                 
                 # Store the entire invoice_data in session for the review page
                 session['invoice_data_for_review'] = invoice_data
-
+                
                 # Clean up temp file
                 os.remove(temp_path)
                 
@@ -544,8 +587,17 @@ def parse_existing_invoice(pdf_path):
         with pdfplumber.open(pdf_path) as pdf:
             raw_text = ""
             for page in pdf.pages:
-                # Accumulate text from each page, preserving original line breaks and adding a newline between pages
-                raw_text += (page.extract_text(x_tolerance=1) or "") + "\n"
+                # Use word-level extraction for better spacing preservation
+                page_text = extract_text_with_words(page)
+                raw_text += (page_text or "") + "\n"
+            
+            # Debug: Print raw text to see what pdfplumber actually extracted
+            print(f"DEBUG: --- RAW PDF Text (before cleaning) ---")
+            # Find and print the line with "Accommodation" to see what was extracted
+            for line in raw_text.splitlines():
+                if 'Accommodation' in line or 'Room booked' in line:
+                    print(f"RAW LINE: '{line}'")
+            print(f"--- END RAW PDF Text ---")
             
             # Apply comprehensive cleaning to the *entire* extracted text after all pages are processed
             from invoice_generator import clean_pdf_text
@@ -618,6 +670,10 @@ def parse_existing_invoice(pdf_path):
                     print("DEBUG: Length of Stay not found via fallback pattern.")
 
             # Extract line items from the services table
+            # Use raw_text for line items to preserve exact description content (before cleaning)
+            # Only normalize whitespace for regex matching, but preserve actual text content
+            raw_lines = raw_text.splitlines()
+            # Also keep cleaned_lines for finding table boundaries
             lines = cleaned_text.splitlines()
             in_table = False
             found_services_header = False
@@ -627,7 +683,7 @@ def parse_existing_invoice(pdf_path):
             # Keep track of where the header parsing starts
             header_search_start_line_idx = -1
             header_keywords_found = set() # To track 'Description', 'Qty', 'Unit Price', 'Total'
-
+            
             for i, line in enumerate(lines):
                 line_stripped = line.strip()
 
@@ -661,11 +717,11 @@ def parse_existing_invoice(pdf_path):
                             in_table = True
                             print(f"DEBUG: Found all table column headers. Starting line item parsing from line {i+1}")
                             continue # Continue to the next line, which should be the first line item
-                    else:
-                        # If we passed the header search window and didn't find them, something is wrong.
-                        print("DEBUG: Exceeded header search window after SERVICES & CHARGES. Line item extraction aborted.")
-                        found_services_header = False # Reset to prevent further header searching
-                        continue # Continue to next line, not in table
+                        else:
+                            # If we passed the header search window and didn't find them, something is wrong.
+                            print("DEBUG: Exceeded header search window after SERVICES & CHARGES. Line item extraction aborted.")
+                            found_services_header = False # Reset to prevent further header searching
+                            continue # Continue to next line, not in table
 
                 if in_table and line_stripped:
                     # Check for table footer or end of relevant content for line items
@@ -675,14 +731,28 @@ def parse_existing_invoice(pdf_path):
                         print(f"DEBUG: Found table footer/end content at line {i}: '{line_stripped}'")
                         continue # Continue to parse other sections like total/payment
                     
-                    # Try to parse line item - more robust pattern after cleaning
+                    # Try to parse line item - use cleaned text for pattern matching, but extract description from raw text
                     # The description can be multi-word, then QTY, then R<PRICE>, then R<TOTAL>
                     # Example: Accommodation - Room booked , None . Rate includes Dinner , Breakfast & Lunch 21 R1688.50 R35458.50
                     line_item_match = re.search(r'(.+?)\s+(\d+)\s*R([\d.]+)\s*R([\d.]+)', line_stripped)
                     
                     if line_item_match:
                         try:
-                            description = line_item_match.group(1).strip()
+                            # Extract description from raw text to preserve exact content (before cleaning)
+                            # Find the corresponding raw line and extract description from it
+                            raw_line = raw_lines[i].strip() if i < len(raw_lines) else line_stripped
+                            print(f"DEBUG: Raw line {i}: '{raw_line}'")
+                            print(f"DEBUG: Cleaned line {i}: '{line_stripped}'")
+                            # Use regex to find the description part in raw line, matching the same pattern
+                            raw_line_match = re.search(r'(.+?)\s+(\d+)\s*R([\d.]+)\s*R([\d.]+)', raw_line)
+                            if raw_line_match:
+                                description = raw_line_match.group(1).strip()
+                                print(f"DEBUG: Extracted description from RAW line: '{description}'")
+                            else:
+                                # Fallback to cleaned text if raw line doesn't match
+                                description = line_item_match.group(1).strip()
+                                print(f"DEBUG: Extracted description from CLEANED line (fallback): '{description}'")
+                            
                             qty = int(line_item_match.group(2))
                             unit_price = float(line_item_match.group(3).replace(',', ''))
                             total = float(line_item_match.group(4).replace(',', ''))
@@ -704,7 +774,7 @@ def parse_existing_invoice(pdf_path):
                                     invoice_data['qty'] = qty
                                     invoice_data['rate_incl'] = unit_price
                                     invoice_data['max_total'] = total
-                                    invoice_data['uom'] = 'Unit' 
+                                    invoice_data['uom'] = 'Unit'
                                     invoice_data['currency_rate'] = 'ZAR'
                                     print(f"DEBUG: Set main service details from first item: {description}, {qty}, {unit_price}, {total}")
                         except (ValueError, IndexError) as e:
@@ -794,7 +864,7 @@ def parse_existing_invoice(pdf_path):
             # No longer need to populate indexed additional services, as they should now be in final_line_items
             # Remove the loop that populated invoice_data[f'additional_service_desc_{idx}'] etc. here
             # This was causing issues with the template expecting *new* entries.
-
+            
             # Debug output
             print("=== PARSED INVOICE DATA ===")
             print(f"Customer Name: {invoice_data['customer_name']}")

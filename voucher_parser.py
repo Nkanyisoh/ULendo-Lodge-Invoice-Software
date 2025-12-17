@@ -363,8 +363,18 @@ def convert_to_invoice_format(data):
     voucher_remarks_list = data.get('remarks', {}).get('voucher', [])
     voucher_remarks_text = " ".join(voucher_remarks_list) # Join all remarks into a single string
     
+    # #region agent log
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"voucher_parser.py:365","message":"voucher_remarks_list","data":{"voucher_remarks_list":voucher_remarks_list,"voucher_remarks_text":voucher_remarks_text},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
+    # #endregion
     transport_match = re.search(r'(Laundry Transport.*?)(?:\s|\b)([rR@]?\d{1,3}(?:[\s,]\d{3})*(?:\.\d{2})?)(?:\sPER\sDAY)?', voucher_remarks_text)
     
+    # #region agent log
+    with open(r'c:\Users\computer\Desktop\ULendo-Lodge-Invoice-Software-main\.cursor\debug.log', 'a', encoding='utf-8') as f:
+        import json
+        f.write(json.dumps({"location":"voucher_parser.py:372","message":"transport_match result","data":{"transport_match_found":bool(transport_match),"transport_match_groups":transport_match.groups() if transport_match else None},"timestamp":int(__import__('time').time()*1000),"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
+    # #endregion
     if transport_match:
         transport_description = transport_match.group(1).strip()
         transport_price_str = transport_match.group(2).replace('R', '').replace('r', '').replace('@', '').replace(',', '').strip()

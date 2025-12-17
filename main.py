@@ -134,7 +134,7 @@ def review():
                 'unit_price': float(request.args.get(f'unit_price_{idx}', 0)),
                 'total': float(request.args.get(f'total_{idx}', 0))
             })
-            idx += 1
+        idx += 1
         if manual_entry_line_items:
             data['line_items'] = manual_entry_line_items
 
@@ -767,14 +767,14 @@ def parse_existing_invoice(pdf_path):
                                 }
                                 invoice_data['line_items'].append(line_item)
                                 print(f"DEBUG: Successfully added line item: {line_item}")
-                                
+                                    
                                 # Set main service details if this is the first item (for compatibility with review page structure)
                                 if not invoice_data.get('description'): # Only set if main description is not already set
                                     invoice_data['description'] = description
                                     invoice_data['qty'] = qty
                                     invoice_data['rate_incl'] = unit_price
                                     invoice_data['max_total'] = total
-                                    invoice_data['uom'] = 'Unit'
+                                    invoice_data['uom'] = 'Unit' 
                                     invoice_data['currency_rate'] = 'ZAR'
                                     print(f"DEBUG: Set main service details from first item: {description}, {qty}, {unit_price}, {total}")
                         except (ValueError, IndexError) as e:

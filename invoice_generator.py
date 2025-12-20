@@ -809,25 +809,14 @@ def get_next_invoice_number(db_path='invoices.db'):
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value INTEGER)")
     
-    # Check current last_inv value
-    c.execute("SELECT value FROM metadata WHERE key='last_inv'")
-    result = c.fetchone()
-    
-    current_last_inv = 0
-    if result:
-        current_last_inv = result[0]
-    
-    # If current_last_inv is less than 599, or it doesn't exist, set it to 599
-    if current_last_inv < 599:
-        c.execute("INSERT OR REPLACE INTO metadata(key, value) VALUES('last_inv', 599)")
-        last = 599 # Start from 600 next
-    else:
-        last = current_last_inv
-
+    # Initialize last_inv if it doesn't exist. The first invoice number generated should be 700.
+    c.execute("INSERT OR IGNORE INTO metadata(key, value) VALUES('last_inv', 699)")
     conn.commit()
-    
-    next_num = last + 1
-    c.execute("UPDATE metadata SET value=? WHERE key='last_inv'", (next_num,))
+
+    # Atomically increment and retrieve the next invoice number
+    c.execute("UPDATE metadata SET value = value + 1 WHERE key = 'last_inv'")
+    c.execute("SELECT value FROM metadata WHERE key = 'last_inv'")
+    next_num = c.fetchone()[0]
     conn.commit()
     conn.close()
     return f"INV-{next_num:06d}"

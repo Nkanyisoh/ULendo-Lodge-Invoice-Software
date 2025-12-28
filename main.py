@@ -339,102 +339,52 @@ def generate_invoice():
         return redirect(url_for('login'))
     data = {k: request.form[k] for k in request.form}
     
-    # Extract only the required voucher fields and fallback to parsed fields for dynamic services
-    voucher_data = {
+    invoice_data = {
         'check_in': data.get('check_in', ''),
         'check_out': data.get('check_out', ''),
         'length_of_stay': data.get('length_of_stay', ''),
         'voucher_number': data.get('voucher_number', ''),
         'passenger_names': data.get('passenger_names', ''),
-        'description': data.get('description', ''),
-        'uom': data.get('uom', ''),
-        'qty': data.get('qty', ''),
-        'currency_rate': data.get('currency_rate', ''),
-        'rate_incl': data.get('rate_incl', ''),
-        'max_total': data.get('max_total', ''),
-        'ancillary_charges': data.get('ancillary_charges', ''),
-        'ancillary_description': data.get('ancillary_description', ''),
+        'customer_name': data.get('passenger_names', ''), # Use passenger names as customer name
         'total_payment_received': data.get('total_payment_received', '0.00'),
-        'customer_name': data.get('passenger_names', ''),  # Use passenger names as customer name
-        # Optional extras from forms
-        'transport_rate': data.get('transport_rate', ''),
-        'transport_total': data.get('transport_total', ''),
-        'transport_description': data.get('transport_description', ''),
-        'additional_service_desc': data.get('additional_service_desc', ''),
-        'additional_service_qty': data.get('additional_service_qty', ''),
-        'additional_service_rate': data.get('additional_service_rate', ''),
-        'additional_service_total': data.get('additional_service_total', '')
+        'line_items': []
     }
 
-    # Collect all line items from the form (parser-provided plus any manually added via review/manual entry)
-    parsed_line_items = []
-    idx = 0
-    while f'description_{idx}' in data:
-        if data.get(f'description_{idx}'):
-            parsed_line_items.append({
-                'description': data.get(f'description_{idx}', ''),
-                'qty': int(data.get(f'qty_{idx}', 0)),
-                'unit_price': float(data.get(f'unit_price_{idx}', 0)),
-                'total': float(data.get(f'total_{idx}', 0))
-            })
-        idx += 1
-    
-    # Calculate invoice total
+    # Calculate invoice total based on dynamically submitted line items
     invoice_total = 0.0
-    
-    # Add main charges (rate_incl * qty)
-    if voucher_data['rate_incl'] and voucher_data['qty']:
-        try:
-            rate = float(voucher_data['rate_incl'].replace('R', '').replace(',', '').strip())
-            qty = int(voucher_data['qty'])
-            main_total = rate * qty
-            invoice_total += main_total
-        except (ValueError, AttributeError):
-            pass
-    
-    # Add ancillary charges (top-level field) if provided; otherwise rely on line items
-    if voucher_data['ancillary_charges']:
-        try:
-            ancillary_total = float(voucher_data['ancillary_charges'].replace('R', '').replace(',', '').strip())
-            invoice_total += ancillary_total
-        except (ValueError, AttributeError):
-            pass
-    
-    # Extract line items from review page (parser-provided + user-edited)
-    line_items = parsed_line_items if parsed_line_items else []
+    for i in range(len(data.keys())): # Iterate through potential line item indices
+        desc_key = f'description_{i}'
+        qty_key = f'qty_{i}'
+        unit_price_key = f'unit_price_{i}'
+        total_key = f'total_{i}'
 
-    # Include any additional services/ancillary from manual-entry stage if present
-    for i in range(5):
-        service_desc = data.get(f'service_description_{i}', '').strip()
-        if service_desc:
+        if data.get(desc_key) and data.get(qty_key) and data.get(unit_price_key) and data.get(total_key):
             try:
-                qty = int(data.get(f'service_qty_{i}', 1))
-                rate = float(data.get(f'service_rate_{i}', 0))
-                total = float(data.get(f'service_total_{i}', 0)) or qty * rate
-                line_items.append({'description': service_desc, 'qty': qty, 'unit_price': rate, 'total': total})
+                description = data.get(desc_key)
+                qty = int(data.get(qty_key))
+                unit_price = float(data.get(unit_price_key))
+                total = float(data.get(total_key))
+
+                if description and qty >= 0 and unit_price >= 0 and total >= 0:
+                    invoice_data['line_items'].append({
+                        'description': description,
+                        'qty': qty,
+                        'unit_price': unit_price,
+                        'total': total
+                    })
                 invoice_total += total
             except (ValueError, TypeError):
+                # Handle cases where conversion to int/float fails
                 pass
-    for i in range(5):
-        ancillary_desc = data.get(f'ancillary_desc_{i}', '').strip()
-        if ancillary_desc:
-            try:
-                qty = int(data.get(f'ancillary_qty_{i}', 1))
-                amount = float(data.get(f'ancillary_amount_{i}', 0))
-                total = qty * amount
-                line_items.append({'description': ancillary_desc, 'qty': qty, 'unit_price': amount, 'total': total})
-                invoice_total += total
-            except (ValueError, TypeError):
+        else:
+            # If a description is missing, assume no more line items for this index and break
+            if desc_key in data or qty_key in data or unit_price_key in data or total_key in data:
+                # If any part of a line item exists but not all, it's an incomplete entry, skip it
                 pass
-    
-    # Do not auto-add transport here to avoid duplication.
-    # Transport will appear as a line item only if detected from the parsed voucher and shown in the form's line items.
+            else:
+                break # Stop if we encounter a missing description, assuming no more line items
 
-    # Line items already include any added services; compute invoice_total from line_items for accuracy
-    line_items = parsed_line_items if parsed_line_items else []
-
-    # Combine voucher data with updated line items and provisional total
-    invoice_data = {**voucher_data, 'line_items': line_items, 'invoice_total': invoice_total}
+    invoice_data['invoice_total'] = invoice_total
 
     # Determine invoice number: use edited value if provided, else auto-generate
     # Ensure INV- prefix is always present
@@ -684,6 +634,7 @@ def parse_existing_invoice(pdf_path):
             header_search_start_line_idx = -1
             header_keywords_found = set() # To track 'Description', 'Qty', 'Unit Price', 'Total'
             
+            pending_text = [] # Initialize buffer for orphan lines
             for i, line in enumerate(lines):
                 line_stripped = line.strip()
 
@@ -697,96 +648,402 @@ def parse_existing_invoice(pdf_path):
                 if found_services_header and not in_table:
                     # Within a few lines after SERVICES & CHARGES, look for column headers
                     # We will check for individual keywords across potentially multiple lines
-                    if i <= header_search_start_line_idx + 4: # Look within the next 4 lines
+                    if i <= header_search_start_line_idx + 25: # Look within the next 25 lines
                         if re.search(r'DESCRIPTION', line_stripped, re.IGNORECASE):
                             header_keywords_found.add('DESCRIPTION')
-                        if re.search(r'QTY', line_stripped, re.IGNORECASE):
+                        if re.search(r'QTY|QUANTITY', line_stripped, re.IGNORECASE):
                             header_keywords_found.add('QTY')
-                        if re.search(r'UNIT\s*PRICE', line_stripped, re.IGNORECASE):
-                            header_keywords_found.add('UNIT PRICE')
-                        elif re.search(r'PRICE', line_stripped, re.IGNORECASE) and 'UNIT PRICE' not in header_keywords_found: # Handle "PRICE" if "UNIT PRICE" not found
+                        if re.search(r'UNIT', line_stripped, re.IGNORECASE):
+                            header_keywords_found.add('UNIT')
+                        if re.search(r'PRICE|RATE', line_stripped, re.IGNORECASE):
                             header_keywords_found.add('PRICE')
-                        if re.search(r'TOTAL', line_stripped, re.IGNORECASE):
+                        if re.search(r'TOTAL|AMOUNT', line_stripped, re.IGNORECASE):
                             header_keywords_found.add('TOTAL')
 
-                        # If all essential headers are found, we are in the table
+                        # If essential headers are found, we are in the table
+                        # Relaxed condition: Description, Qty and Total are enough
                         if 'DESCRIPTION' in header_keywords_found and \
                            'QTY' in header_keywords_found and \
-                           ('UNIT PRICE' in header_keywords_found or 'PRICE' in header_keywords_found) and \
                            'TOTAL' in header_keywords_found:
                             in_table = True
-                            print(f"DEBUG: Found all table column headers. Starting line item parsing from line {i+1}")
-                            continue # Continue to the next line, which should be the first line item
+                            print("DEBUG: Table headers found. Entering table mode.")
+                            continue # SKIP the header line itself to avoid processing it as data
                         else:
-                            # If we passed the header search window and didn't find them, something is wrong.
-                            print("DEBUG: Exceeded header search window after SERVICES & CHARGES. Line item extraction aborted.")
-                            found_services_header = False # Reset to prevent further header searching
+                            # Keep searching until window expires
+                            pass
+                    else:
+                        if not in_table:
+                             # If we passed the header search window and didn't find them, something is wrong.
+                            print(f"DEBUG: Exceeded header search window (line {i}) after SERVICES & CHARGES. Found: {header_keywords_found}")
+                            found_services_header = False # Reset to prevent further header searching and the spurious debug message
+                            header_keywords_found = set() # Reset found keywords
                             continue # Continue to next line, not in table
 
                 if in_table and line_stripped:
-                    # Check for table footer or end of relevant content for line items
-                    if any(re.search(pattern, line_stripped, re.IGNORECASE) for pattern in table_end_patterns):
+                    # Use flexible pattern for table end (e.g. INVOICE TOTAL : R50)
+                    if any(re.search(pattern, line_stripped, re.IGNORECASE) for pattern in [r'INVOICE\s*TOTAL', r'PAYMENT\s*DETAILS', r'IMPORTANT\s*NOTES', r'POLICIES\s*&\s*INFORMATION']):
                         in_table = False # Exit table parsing mode
                         found_services_header = False # Also reset this to prevent spurious header search messages later
-                        print(f"DEBUG: Found table footer/end content at line {i}: '{line_stripped}'")
                         continue # Continue to parse other sections like total/payment
                     
-                    # Try to parse line item - use cleaned text for pattern matching, but extract description from raw text
-                    # The description can be multi-word, then QTY, then R<PRICE>, then R<TOTAL>
-                    # Example: Accommodation - Room booked , None . Rate includes Dinner , Breakfast & Lunch 21 R1688.50 R35458.50
-                    line_item_match = re.search(r'(.+?)\s+(\d+)\s*R([\d.]+)\s*R([\d.]+)', line_stripped)
+                    # Attempt to parse line items from the current line
+                    # We use re.finditer to handle multiple items on a single line
+                    # Regex for currency/number: allow R/ZAR, spaces, commas, decimals
+                    # Improved: Allows optional space between R and number, and more flexible digit grouping
+                    # Note: Use + for comma groups to ensure we don't match partial numbers (e.g. 900 of 9000)
+                    currency_pattern = r'(?:R|ZAR)?\s*(?:(?:\d{1,3}(?:[ ,]\d{3})+)(?:\.\d+)?|\d+(?:\.\d+)?)'
                     
-                    if line_item_match:
-                        try:
-                            # Extract description from raw text to preserve exact content (before cleaning)
-                            # Find the corresponding raw line and extract description from it
-                            raw_line = raw_lines[i].strip() if i < len(raw_lines) else line_stripped
-                            print(f"DEBUG: Raw line {i}: '{raw_line}'")
-                            print(f"DEBUG: Cleaned line {i}: '{line_stripped}'")
-                            # Use regex to find the description part in raw line, matching the same pattern
-                            raw_line_match = re.search(r'(.+?)\s+(\d+)\s*R([\d.]+)\s*R([\d.]+)', raw_line)
-                            if raw_line_match:
-                                description = raw_line_match.group(1).strip()
-                                print(f"DEBUG: Extracted description from RAW line: '{description}'")
-                            else:
-                                # Fallback to cleaned text if raw line doesn't match
-                                description = line_item_match.group(1).strip()
-                                print(f"DEBUG: Extracted description from CLEANED line (fallback): '{description}'")
-                            
-                            qty = int(line_item_match.group(2))
-                            unit_price = float(line_item_match.group(3).replace(',', ''))
-                            total = float(line_item_match.group(4).replace(',', ''))
-                            
-                            # Basic validation
-                            if description and qty >= 0 and unit_price >= 0 and total >= 0:
-                                line_item = {
-                                    'description': description,
-                                    'qty': qty,
-                                    'unit_price': unit_price,
-                                    'total': total
-                                }
-                                invoice_data['line_items'].append(line_item)
-                                print(f"DEBUG: Successfully added line item: {line_item}")
+                    # Ignore header-only or label lines (e.g., DESCRIPTION, QTY, PRICE, TOTAL)
+                    if not any(ch.isdigit() for ch in line_stripped):
+                        header_noise_tokens = ['description', 'qty', 'quantity', 'unit', 'unit price', 'price', 'total', 'amount']
+                        lowered = line_stripped.lower()
+                        if any(tok in lowered for tok in header_noise_tokens):
+                            continue
+                    
+                    # Regex to find item endings: Qty + Price + Total
+                    # Group 1: Full match including leading spaces (for position calculation)
+                    # Group 2: Qty (Int)
+                    # Group 3: Price
+                    # Group 4: Total
+                    # Improved: Use \s* instead of \s+ between columns to handle compressed text (e.g. center30)
+                    number_group_regex = f'(\\s*(\\d+)\\s*({currency_pattern})\\s*({currency_pattern}))'
+                    
+                    matches = list(re.finditer(number_group_regex, line_stripped, re.IGNORECASE))
+                    
+                    # Known service headers that might be merged with item descriptions
+                    known_headers = [
+                        "Personal Services - Laundry",
+                        "Personal Services",
+                        "Laundry"
+                    ]
+                    
+                    if matches:
+                        # Heuristic: If we have multiple matches on one line, and they look like "Rate" followed by "Total",
+                        # we often want the last one, or we want to merge them.
+                        # Example: "Transport... 1 R300 R300 30 R300 R9000"
+                        # Match 0: Qty 1, 300, 300. Desc "Transport..."
+                        # Match 1: Qty 30, 300, 9000. Desc ""
+                        
+                        # We will process all matches, but if a match has an empty description and follows another match,
+                        # we might assume it's the "Main" line item and the previous one was just a rate breakdown.
+                        # However, sometimes multiple items are on one line (e.g. Laundry third ... fourth ...).
+                        
+                        last_end = 0
+                        items_on_line = []
+                        
+                        for i, match in enumerate(matches):
+                            try:
+                                # Extract fields
+                                qty = int(match.group(2))
+                                # Clean strings
+                                unit_price_str = match.group(3).upper().replace('R', '').replace('ZAR', '').replace(' ', '').replace(',', '')
+                                total_str = match.group(4).upper().replace('R', '').replace('ZAR', '').replace(' ', '').replace(',', '')
+                                
+                                # Handle empty strings if regex matched empty groups (unlikely with \d+)
+                                unit_price = float(unit_price_str) if unit_price_str else 0.0
+                                total = float(total_str) if total_str else 0.0
+                                
+                                # Determine description
+                                start = match.start()
+                                
+                                if i == 0:
+                                    # First item on line
+                                    current_desc_part = line_stripped[last_end:start].strip()
                                     
-                                # Set main service details if this is the first item (for compatibility with review page structure)
-                                if not invoice_data.get('description'): # Only set if main description is not already set
-                                    invoice_data['description'] = description
-                                    invoice_data['qty'] = qty
-                                    invoice_data['rate_incl'] = unit_price
-                                    invoice_data['max_total'] = total
-                                    invoice_data['uom'] = 'Unit' 
-                                    invoice_data['currency_rate'] = 'ZAR'
-                                    print(f"DEBUG: Set main service details from first item: {description}, {qty}, {unit_price}, {total}")
-                        except (ValueError, IndexError) as e:
-                            print(f"DEBUG: Error parsing line item '{line_stripped}': {e}")
+                                    # Handle Pending Text (Orphan lines) from previous iterations:
+                                    # Fix: Don't append if the pending text looks like a Header for the CURRENT item.
+                                    # E.g. "Personal Services" followed by "- Laundry" should combine, not append to previous.
+                                    
+                                    combined_check = False
+                                    if pending_text:
+                                        continuation = " ".join(pending_text)
+                                        
+                                        # Heuristic: If continuation is short and looks like a header (e.g. "Personal Services")
+                                        # and current desc starts with "-" or lowercase, maybe it belongs here.
+                                        is_header_like = any(k.lower() in continuation.lower() for k in ["Personal Services", "Laundry", "Transport", "Accommodation"])
+                                        
+                                        if is_header_like:
+                                            # Prepend to current item
+                                            print(f"DEBUG: Prepending pending header '{continuation}' to current item '{current_desc_part}'")
+                                            current_desc_part = f"{continuation} {current_desc_part}".strip()
+                                            pending_text = []
+                                            combined_check = True
+                                    
+                                    if not combined_check and pending_text and invoice_data['line_items']:
+                                        continuation = " ".join(pending_text)
+                                        print(f"DEBUG: Appending pending text to previous item: '{continuation}'")
+                                        invoice_data['line_items'][-1]['description'] += " " + continuation
+                                        pending_text = []
+                                    elif not combined_check and pending_text:
+                                        # No previous items to attach; might be the start of this item
+                                        continuation = " ".join(pending_text)
+                                        current_desc_part = f"{continuation} {current_desc_part}".strip()
+                                        pending_text = []
+                                    
+                                    description = current_desc_part
+                                else:
+                                    # Subsequent items on same line
+                                    description = line_stripped[last_end:start].strip()
+                                
+                                # Check for merged headers (e.g. "Personal Services - Laundry third")
+                                # If description starts with a known header and has more text, split it.
+                                header_split_done = False
+                                for header in known_headers:
+                                    # Check if description starts with header (case insensitive)
+                                    if description.lower().startswith(header.lower()):
+                                        # Check if there is text AFTER the header
+                                        remainder_check = description[len(header):].strip()
+                                        
+                                        if remainder_check:
+                                            # Found a merged header!
+                                            print(f"DEBUG: Splitting merged header '{header}' from description '{description}'")
+                                            
+                                            # Add the header as a separate line item with 0 values
+                                            items_on_line.append({
+                                                'description': header, 
+                                                'qty': 0, 
+                                                'unit_price': 0.0,
+                                                'total': 0.0
+                                            })
+                                            
+                                            # Update description to be the remainder
+                                            description = remainder_check
+                                            header_split_done = True
+                                            break
+                                        else:
+                                            # Perfect header match.
+                                            # Do NOT split if it's the item itself (i.e. has values).
+                                            # Only stop checking other headers.
+                                            break
+                                
+                                # Special handling for "Transport" double-match scenario
+                                # If this is a subsequent match (i > 0) AND description is empty AND it looks like a total of the previous item?
+                                # Or if the previous item was Qty 1 and this is Qty > 1?
+                                if i > 0 and not description and items_on_line:
+                                    prev_item = items_on_line[-1]
+                                    # If previous item has a description and this one doesn't...
+                                    # And maybe the previous item looks like a "Rate" (Qty 1)?
+                                    if prev_item['qty'] == 1 and qty > 1:
+                                        # This is likely the "Total" line.
+                                        # We should probably discard the "Rate" line and use its description for THIS line.
+                                        print(f"DEBUG: Merging Rate item '{prev_item}' into Total item (Qty {qty})")
+                                        description = prev_item['description']
+                                        # Remove the previous "Rate" item
+                                        items_on_line.pop()
+                                    elif not description:
+                                         # If description is still empty, inherit from previous?
+                                         # Only if it makes sense.
+                                         pass
+
+                                # Basic validation
+                                if description or qty >= 0: 
+                                    line_item = {
+                                        'description': description,
+                                        'qty': qty,
+                                        'unit_price': unit_price,
+                                        'total': total
+                                    }
+                                    items_on_line.append(line_item)
+                                    
+                                    # Set main service details if this is the first item (globally)
+                                    if not invoice_data.get('description') and description: 
+                                        invoice_data['description'] = description
+                                        invoice_data['qty'] = qty
+                                        invoice_data['rate_incl'] = unit_price
+                                        invoice_data['max_total'] = total
+                                        invoice_data['uom'] = 'Unit' 
+                                        invoice_data['currency_rate'] = 'ZAR'
+                                
+                                last_end = match.end()
+                            except (ValueError, IndexError) as e:
+                                print(f"DEBUG: Error parsing line item match: {e}")
+                                continue
+                        
+                        # Add items found on this line to main list
+                        invoice_data['line_items'].extend(items_on_line)
+                        
+                        # Handle trailing text after the last match
+                        trailing = line_stripped[last_end:].strip()
+                        if trailing:
+                            pending_text.append(trailing)
+                        else:
+                            pass
+                            
                     else:
-                        print(f"DEBUG: No line item match for line: '{line_stripped}'")
+                        # No match, treat as pending text (continuation or noise)
+                        pending_text.append(line_stripped)
+            
+            # Post-loop: Handle any remaining pending text (continuation of last item)
+            if pending_text and invoice_data['line_items']:
+                 continuation = " ".join(pending_text)
+                 print(f"DEBUG: Appending remaining pending text to last item: '{continuation}'")
+                 invoice_data['line_items'][-1]['description'] += " " + continuation
+                    
             
             # --- Post-table extraction (for totals and payments) ---
             # Recompute invoice total from line items (as a sanity check) 
             computed_invoice_total = sum(item.get('total', 0) for item in invoice_data['line_items'])
             print(f"DEBUG: Computed Invoice Total from line items (sanity check): {computed_invoice_total}")
 
+            # Post-processing to clean up duplicate 0-value items
+            # Specifically "Personal Services - Laundry" vs "Personal Services"
+            # And merge or remove duplicates if they have 0 values and same/similar description
+            
+            final_cleaned_items = []
+            seen_keys = set()
+            
+            for item in invoice_data['line_items']:
+                desc = item.get('description', '').strip()
+                qty = item.get('qty', 0)
+                price = item.get('unit_price', 0.0)
+                total = item.get('total', 0.0)
+                
+                # Create a key to identify unique items (desc + values)
+                # But we want to be smarter: if we have "Personal Services - Laundry" (0,0,0) 
+                # and later another one, or a "Personal Services" (0,0,0), we might want to keep only the most specific one.
+                
+                # Normalize description for key
+                norm_desc = desc.lower().replace(' ', '')
+                
+                # Key
+                key = (norm_desc, qty, price, total)
+                
+                if key in seen_keys:
+                    print(f"DEBUG: Removing exact duplicate item: {item}")
+                    continue
+                
+                seen_keys.add(key)
+                final_cleaned_items.append(item)
+            
+            # Second pass: Remove "Personal Services" (0-value) if "Personal Services - Laundry" exists?
+            # Or simpler: Just remove items with empty description?
+            
+            really_final_items = []
+            has_laundry_header = any(
+                "personal services - laundry" in i['description'].lower() 
+                for i in final_cleaned_items
+            )
+            
+            for item in final_cleaned_items:
+                desc = item.get('description', '').strip()
+                qty = item.get('qty', 0)
+                price = item.get('unit_price', 0.0)
+                total = item.get('total', 0.0)
+                
+                # Special fix for mixed descriptions like "- Laundry Daily Transport..."
+                # This happens if "Personal Services" was stripped or split but "Laundry" remained attached to Transport.
+                if 'laundry' in desc.lower() and 'daily transport' in desc.lower():
+                    print(f"DEBUG: Found mixed Laundry/Transport description: '{desc}'")
+                    # Split them
+                    # Find where 'Daily Transport' starts
+                    idx = desc.lower().find('daily transport')
+                    if idx != -1:
+                        laundry_part = desc[:idx].strip()
+                        transport_part = desc[idx:].strip()
+                        
+                        # Clean up laundry part (remove leading hyphens etc)
+                        laundry_part = laundry_part.strip(' -')
+                        if not laundry_part:
+                            laundry_part = "Personal Services - Laundry" # Reconstruct full header if it was just "- Laundry"
+                        elif "personal services" not in laundry_part.lower():
+                             # If it's just "Laundry", make it full
+                             laundry_part = "Personal Services - Laundry"
+
+                        # Create two items
+                        # 1. Laundry Header (0 values)
+                        if not has_laundry_header: # Only add if not already present (though we are inside the loop, so maybe check really_final_items too)
+                             # Check if we already added it in really_final_items
+                             if not any(i['description'] == laundry_part for i in really_final_items):
+                                 really_final_items.append({
+                                     'description': laundry_part,
+                                     'qty': 0,
+                                     'unit_price': 0.0,
+                                     'total': 0.0
+                                 })
+                                 has_laundry_header = True
+                        
+                        # 2. Transport Item (with original values)
+                        item['description'] = transport_part
+                        desc = transport_part # Update for further checks
+                        # Continue processing this item as the Transport item
+                
+                # Remove empty description items if they have no value
+                if not desc and total == 0:
+                    print(f"DEBUG: Removing empty item with no value: {item}")
+                    continue
+                
+                # Remove "Personal Services" (0 value) if we have "Personal Services - Laundry"
+                if desc.lower() == "personal services" and total == 0 and has_laundry_header:
+                    print(f"DEBUG: Removing redundant 'Personal Services' header in favor of Laundry header: {item}")
+                    continue
+                    
+                # Fix for incorrect quantity/price mapping (User feedback: Line Item 4 Qty 1 vs 30)
+                # If we see a "Transport" item with Qty 1 and Price X, and another with Qty 30 and Price X?
+                
+                if really_final_items:
+                    prev = really_final_items[-1]
+                    prev_desc = prev.get('description', '')
+                    prev_qty = prev.get('qty', 0)
+                    prev_price = prev.get('unit_price', 0.0)
+                    
+                    # Merge condition: Previous is "Rate" (Qty 1), Current has no description (or same?) and Qty > 1
+                    # Or current description is empty and it's a continuation?
+                    # IMPROVED: Allow merge if prices match and descriptions are compatible (or one is empty)
+                    # Also explicitly check for Price Match to avoid merging different services with same price
+                    
+                    prices_match = abs(prev_price - price) < 1.0 if price > 0 else True
+                    
+                    if prev_qty == 1 and qty > 1 and prices_match:
+                         # Check description compatibility
+                         # Merge if:
+                         # 1. Descriptions match
+                         # 2. Current description is empty (inherits from prev)
+                         # 3. Previous description is empty (orphan rate line)
+                         # 4. Previous description is a Header/0-value item that was incorrectly adopted? (Handled below)
+                         
+                         if not desc or not prev_desc or desc == prev_desc:
+                            print(f"DEBUG: Merging Rate item '{prev_desc}' into Total item (Qty {qty}) in post-processing")
+                            # Update the current item to have the description if it was missing
+                            if not item['description']:
+                                item['description'] = prev_desc
+                            # Remove the previous item from the final list
+                            really_final_items.pop()
+                         elif prev_desc != desc:
+                                 # Descriptions differ.
+                                 # Check if previous item is a Known Service that should NOT be merged
+                                 # e.g. "Personal Services - Laundry" (Qty 1) should NOT be merged into "Daily Transport" (Qty 30)
+                                 # even if prices match.
+                                 
+                                 prev_is_known_service = any(k.lower() in prev_desc.lower() for k in ["personal services", "laundry", "accommodation"])
+                                 
+                                 if not prev_is_known_service:
+                                     print(f"DEBUG: Merging Rate item with mismatched desc '{prev_desc}' into Total item '{desc}' (Price match)")
+                                     really_final_items.pop()
+                                 else:
+                                     print(f"DEBUG: NOT Merging known service '{prev_desc}' into '{desc}' despite price match.")
+                             
+                    elif not desc and prev_desc:
+                         # Orphan numbers with no description - merge with previous?
+                         # FIX: Don't adopt description if previous item is a Header (Qty 0)
+                         # This prevents "Personal Services - Laundry" (Header) from naming the subsequent "Rate" line (1, 300)
+                         
+                         is_header = (prev_qty == 0 and prev.get('total', 0) == 0)
+                         
+                         if not is_header:
+                             print(f"DEBUG: Merging orphan item (Qty {qty}) into previous item '{prev_desc}'")
+                             item['description'] = prev_desc
+                             
+                             # Check if previous item was Qty 1 (Rate) and this one is Qty > 1 (Total)
+                             if prev_qty == 1 and qty > 1:
+                                 print(f"DEBUG: Upgrading Rate item to Total item (Qty {qty})")
+                                 really_final_items.pop()
+                         else:
+                             print(f"DEBUG: Orphan item (Qty {qty}) found after Header '{prev_desc}'. Keeping as orphan/empty for now.")
+                        
+                really_final_items.append(item)
+
+            invoice_data['line_items'] = really_final_items
+            
             # Extract actual Invoice Total from the PDF text with flexible colon and currency symbol parsing
             invoice_total_match = re.search(r'INVOICE TOTAL\s*:\s*R\s*([\d,\s]+\.?\d*)', cleaned_text, re.IGNORECASE)
             if invoice_total_match:

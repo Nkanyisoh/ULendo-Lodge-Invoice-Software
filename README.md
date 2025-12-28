@@ -195,7 +195,3 @@ This project is proprietary software for Ulendo Lodge.
 ## Support
 
 For technical support or questions, contact the development team.
-=======
-# ULendo-Lodge-Invoice-Software
-Software for Generating Invoices
->>>>>>> 88b1cee439e83070fe4a7822d5e3cf29983ed3f3

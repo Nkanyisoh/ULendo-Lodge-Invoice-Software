@@ -555,6 +555,12 @@ def parse_existing_invoice(pdf_path):
             lines = text.split('\n')
             in_table = False
             table_started = False
+            pending_text = []  # Buffer for description-only lines (no numbers)
+            SERVICE_KEYWORDS = [
+                "Accommodation", "Personal Services", "Laundry", "Transport", "Daily Transport", 
+                "Meals", "Beverages", "Room Hire", "Equipment", "Sundries", "Telephone", "Internet",
+                "Conference", "Training"
+            ]
             
             for i, line in enumerate(lines):
                 # Look for table header - be more flexible with header detection
@@ -568,59 +574,102 @@ def parse_existing_invoice(pdf_path):
                 
                 if in_table and line.strip():
                     # Skip empty lines and footer
-                    if 'Total Amount Received' in line or 'Amount Due' in line or 'Payment Details' in line:
+                    line_stripped = line.strip()
+                    if 'Total Amount Received' in line_stripped or 'Amount Due' in line_stripped or 'Payment Details' in line_stripped:
                         break
                     
-                    # Try to parse line item - look for lines with description and numbers
-                    if re.search(r'\d+\.?\d*', line):  # Line contains numbers
-                        try:
-                            # Split line and look for the last 3 numeric values
-                            parts = line.split()
-                            numbers = []
-                            description_parts = []
-                            
-                            for part in parts:
-                                # Check if part is a number (including decimals and commas)
-                                if re.match(r'^[\d,]+\.?\d*$', part.replace(',', '')):
-                                    numbers.append(float(part.replace(',', '')))
-                                else:
-                                    description_parts.append(part)
-                            
-                            # We need at least 3 numbers (qty, price, total)
-                            if len(numbers) >= 3:
-                                # Last 3 numbers should be qty, price, total
-                                qty = int(numbers[-3])
-                                price = numbers[-2]
-                                total = numbers[-1]
+                    # Ignore header-only or label lines (no digits and contains column keywords)
+                    if not any(ch.isdigit() for ch in line_stripped):
+                        lowered = line_stripped.lower()
+                        if any(tok in lowered for tok in ['description','qty','quantity','unit','unit price','price','total','amount']):
+                            continue
+                    
+                    # Robust pattern: Qty + Price + Total, supporting R/ZAR, spaces, commas, decimals
+                    currency_pattern = r'(?:R|ZAR)?\s*(?:(?:\d{1,3}(?:[ ,]\d{3})+)(?:\.\d+)?|\d+(?:\.\d+)?)'
+                    number_group_regex = f'(\\s+(\\d+)\\s+({currency_pattern})\\s+({currency_pattern}))'
+                    matches = list(re.finditer(number_group_regex, line_stripped, re.IGNORECASE))
+                    
+                    if matches:
+                        last_end = 0
+                        for j, match in enumerate(matches):
+                            try:
+                                qty = int(match.group(2))
+                                unit_price_str = match.group(3).upper().replace('R', '').replace('ZAR', '').replace(' ', '').replace(',', '')
+                                total_str = match.group(4).upper().replace('R', '').replace('ZAR', '').replace(' ', '').replace(',', '')
+                                unit_price = float(unit_price_str)
+                                total = float(total_str)
                                 
-                                # Description is everything before the numbers
-                                description = ' '.join(description_parts).strip()
+                                start = match.start()
+                                description = line_stripped[last_end:start].strip()
                                 
-                                if description and qty > 0 and price > 0 and total > 0:
-                                    line_item = {
-                                        'description': description,
-                                        'qty': qty,
-                                        'unit_price': price,
-                                        'total': total
-                                    }
+                                # If we have pending description-only text collected earlier, convert to a standalone item
+                                if pending_text:
+                                    cont = " ".join(pending_text).strip()
+                                    if cont:
+                                        invoice_data['line_items'].append({'description': cont, 'qty': 0, 'unit_price': 0.0, 'total': 0.0})
+                                    pending_text = []
+                                
+                                # Split merged descriptions into separate items when a second service keyword appears mid-string
+                                split_point = -1
+                                for keyword in sorted(SERVICE_KEYWORDS, key=len, reverse=True):
+                                    idx = description.lower().find(keyword.lower())
+                                    if idx > 3:
+                                        split_point = idx
+                                        break
+                                if split_point > 0:
+                                    first_desc = description[:split_point].strip()
+                                    second_desc = description[split_point:].strip()
+                                    if first_desc:
+                                        invoice_data['line_items'].append({'description': first_desc, 'qty': 0, 'unit_price': 0.0, 'total': 0.0})
+                                    description = second_desc
+                                
+                                if description:
+                                    line_item = {'description': description, 'qty': qty, 'unit_price': unit_price, 'total': total}
                                     invoice_data['line_items'].append(line_item)
                                     print(f"Added line item: {line_item}")
                                     
-                                    # Also set the main service details if this is the first item
                                     if len(invoice_data['line_items']) == 1:
                                         invoice_data['description'] = description
                                         invoice_data['qty'] = qty
-                                        invoice_data['rate_incl'] = price
+                                        invoice_data['rate_incl'] = unit_price
                                         invoice_data['max_total'] = total
                                         invoice_data['uom'] = 'Unit'
                                         invoice_data['currency_rate'] = 'ZAR'
-                                        print(f"Set main service details: {description}, {qty}, {price}, {total}")
-                        except (ValueError, IndexError) as e:
-                            print(f"Error parsing line item: {line}, Error: {e}")
-                            continue
+                                        print(f"Set main service details: {description}, {qty}, {unit_price}, {total}")
+                                
+                                last_end = match.end()
+                            except (ValueError, IndexError) as e:
+                                print(f"Error parsing line item: {line_stripped}, Error: {e}")
+                                continue
+                        
+                        # Any trailing text becomes pending for the next loop iteration
+                        trailing = line_stripped[last_end:].strip()
+                        if trailing:
+                            pending_text.append(trailing)
+                    else:
+                        # No numeric group; collect as pending description-only text
+                        pending_text.append(line_stripped)
+            
+            # After processing lines, flush any remaining pending description-only text as standalone items
+            if pending_text:
+                cont = " ".join(pending_text).strip()
+                if cont:
+                    invoice_data['line_items'].append({'description': cont, 'qty': 0, 'unit_price': 0.0, 'total': 0.0})
             
             # Calculate invoice total from line items
             invoice_data['invoice_total'] = sum(item['total'] for item in invoice_data['line_items'])
+            
+            normalized_items = []
+            for item in invoice_data['line_items']:
+                desc_lower = item.get('description', '').lower()
+                if 'daily transport' in desc_lower and 'laundry' in desc_lower:
+                    idx = desc_lower.find('daily transport')
+                    transport_desc = item['description'][idx:].strip()
+                    normalized_items.append({'description': 'Personal Services - Laundry', 'qty': 0, 'unit_price': 0.0, 'total': 0.0})
+                    normalized_items.append({'description': transport_desc, 'qty': item.get('qty', 0), 'unit_price': item.get('unit_price', 0.0), 'total': item.get('total', 0.0)})
+                else:
+                    normalized_items.append(item)
+            invoice_data['line_items'] = normalized_items
             
             # Extract payment received (look for "Total Amount Received")
             payment_match = re.search(r'Total Amount Received:\s*R?\s*([\d,]+\.?\d*)', text)

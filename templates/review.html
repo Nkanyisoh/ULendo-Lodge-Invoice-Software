@@ -362,90 +362,9 @@ Email: supplier.invoices@twf.co.za</textarea>
                     </div>
                 </div>
 
-                <div class="section service-section">
-                    <h3>🏨 Service Details</h3>
-                    <div class="field field-full">
-                        <label>Description:</label>
-                        <input type="text" name="description" value="{{ data.description }}">
-                    </div>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>UOM:</label>
-                            <input type="text" name="uom" value="{{ data.uom }}">
-                        </div>
-                        <div class="field">
-                            <label>Quantity:</label>
-                            <input type="number" name="qty" value="{{ data.qty }}">
-                        </div>
-                    </div>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>Currency Rate:</label>
-                            <input type="text" name="currency_rate" value="{{ data.currency_rate }}">
-                        </div>
-                        <div class="field">
-                            <label>Rate (Incl.):</label>
-                            <input type="text" name="rate_incl" value="{{ data.rate_incl }}">
-                        </div>
-                    </div>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>Max Total:</label>
-                            <input type="text" name="max_total" value="{{ data.max_total }}">
-                        </div>
-                        <div class="field">
-                            <label>Ancillary Charges:</label>
-                            <input type="text" name="ancillary_charges" value="{{ data.ancillary_charges }}">
-                        </div>
-                    </div>
-                    <div class="field field-full">
-                        <label>Ancillary Charges Description:</label>
-                        <input type="text" name="ancillary_description" value="{{ data.ancillary_description or 'Additional Services' }}">
-                    </div>
-                </div>
-
-                {% if data.has_transport %}
-                <div class="section transport-section">
-                    <h3>🚗 Transport Services</h3>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>Daily Transport Rate (R):</label>
-                            <input type="number" step="0.01" name="transport_rate" value="{{ data.transport_rate }}">
-                        </div>
-                        <div class="field">
-                            <label>Transport Total:</label>
-                            <input type="number" step="0.01" name="transport_total" value="{{ data.transport_total }}" readonly>
-                        </div>
-                    </div>
-                    <div class="field field-full">
-                        <label>Transport Description:</label>
-                        <input type="text" name="transport_description" value="{{ data.transport_description }}">
-                    </div>
-                </div>
-                {% endif %}
-
-                {% if data.has_ancillary_services %}
-                <div class="section ancillary-section">
-                    <h3>🧺 Ancillary Services</h3>
-                    <div class="field-row">
-                        <div class="field">
-                            <label>Personal Services - Laundry (R):</label>
-                            <input type="number" step="0.01" name="ancillary_rate" value="{{ data.ancillary_rate or data.ancillary_total }}">
-                        </div>
-                        <div class="field">
-                            <label>Ancillary Total:</label>
-                            <input type="number" step="0.01" name="ancillary_total" value="{{ data.ancillary_total }}" readonly>
-                        </div>
-                    </div>
-                    <div class="field field-full">
-                        <label>Ancillary Description:</label>
-                        <input type="text" name="ancillary_description" value="{{ data.ancillary_description }}">
-                    </div>
-                </div>
-                {% endif %}
 
                 <div class="section additional-services">
-                    <h3>➕ Additional Services</h3>
+                    <h3>➕ Add New Line Item</h3>
                     <div class="field-row">
                         <div class="field">
                             <label>Service Description:</label>
@@ -491,6 +410,7 @@ Email: supplier.invoices@twf.co.za</textarea>
                                 <label>Total:</label>
                                 <input type="number" step="0.01" name="total_{{ i }}" value="{{ item.total }}">
                             </div>
+                            <button type="button" class="btn-remove-service" onclick="removeService(this, {{ i }})">Remove</button>
                         </div>
                     {% endfor %}
                 </div>
@@ -531,55 +451,25 @@ Email: supplier.invoices@twf.co.za</textarea>
                 rateEl?.addEventListener('input', recalc);
                 totEl?.addEventListener('input', updateInvoiceAndDue);
             }
-            // Attach to existing items
+            // Initialize calculations for existing line items
             Array.from(document.querySelectorAll('input[name^="description_"]')).forEach((el)=>{
                 const i = el.name.split('_')[1]; attachLineItemListeners(i);
             });
-            // Update when payment changes
-            const transportRate = document.querySelector('input[name="transport_rate"]');
-            const lengthOfStay = document.querySelector('input[name="length_of_stay"]');
-            const transportTotal = document.querySelector('input[name="transport_total"]');
-            
-            function calculateTransportTotal() {
-                const rate = parseFloat(transportRate.value) || 0;
-                const length = parseInt(lengthOfStay.value) || 1;
-                transportTotal.value = (rate * length).toFixed(2);
-            }
-            
-            transportRate.addEventListener('input', calculateTransportTotal);
-            lengthOfStay.addEventListener('input', calculateTransportTotal);
-            
-            // Calculate ancillary total when rate changes
-            const ancillaryRate = document.querySelector('input[name="ancillary_rate"]');
-            const ancillaryTotal = document.querySelector('input[name="ancillary_total"]');
-            
-            function calculateAncillaryTotal() {
-                const rate = parseFloat(ancillaryRate.value) || 0;
-                ancillaryTotal.value = rate.toFixed(2);
-            }
-            
-            ancillaryRate.addEventListener('input', calculateAncillaryTotal);
-            
-            // Calculate additional service total
-            const serviceQty = document.querySelector('input[name="additional_service_qty"]');
-            const serviceRate = document.querySelector('input[name="additional_service_rate"]');
-            const serviceTotal = document.querySelector('input[name="additional_service_total"]');
-            
-            function calculateServiceTotal() {
-                const qty = parseInt(serviceQty.value) || 0;
-                const rate = parseFloat(serviceRate.value) || 0;
-                serviceTotal.value = (qty * rate).toFixed(2);
-            }
-            
-            serviceQty.addEventListener('input', calculateServiceTotal);
-            serviceRate.addEventListener('input', calculateServiceTotal);
-            
-            // Initialize calculations
-            calculateTransportTotal();
-            calculateAncillaryTotal();
-            calculateServiceTotal();
             updateInvoiceAndDue();
         });
+        
+        function removeService(buttonElement, index) {
+            if (confirm('Are you sure you want to remove this line item?')) {
+                const lineItemDiv = buttonElement.closest('.line-item');
+                if (lineItemDiv) {
+                    lineItemDiv.remove();
+                    // Re-index remaining items if necessary (optional, but good for consistency)
+                    // This might be tricky with form submission, so for now just remove
+                    // And update total
+                    updateInvoiceAndDue();
+                }
+            }
+        }
         
         function addService() {
             const descEl = document.querySelector('input[name="additional_service_desc"]');
@@ -617,7 +507,8 @@ Email: supplier.invoices@twf.co.za</textarea>
                     <div class="field">
                         <label>Total:</label>
                         <input type="number" step="0.01" name="total_${i}" value="${total.toFixed(2)}">
-                    </div>`;
+                    </div>
+                    <button type="button" class="btn-remove-service" onclick="removeService(this, ${i})">Remove</button>`;
                 container.appendChild(wrapper);
                 // Attach listeners and update totals
                 (function(){

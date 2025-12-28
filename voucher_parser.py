@@ -2,6 +2,7 @@ import re
 import json
 from PyPDF2 import PdfReader
 import os
+from datetime import datetime
 
 def parse_voucher_pdf(pdf_path):
     """
@@ -70,6 +71,9 @@ def parse_voucher_pdf(pdf_path):
                 "notes": search(r"The quoted rate.*\n\n*(.+)")
             }
         }
+        
+        # Store full text for fallback searches
+        data["full_text"] = text
         
         # Look for accommodation details in the actual voucher format
         accommodation_match = re.search(r"Room\s*Night\s*(\d+)\s*ZAR\s*(\d+[\s\d]*\.\d{2})\s*(\d+[\s\d]*\.\d{2})", text, re.IGNORECASE)
@@ -402,6 +406,69 @@ def convert_to_invoice_format(data):
                 invoice_data['transport_total'] = f"{transport_price:.2f}"
         except ValueError:
             pass # Log error if price parsing fails
+
+    # NEW LOGIC: Detect "Transport from guest house to training center" in remarks
+    # User requirement: Detect this specific phrase, extract price (default 300), use duration of stay as qty
+    
+    # 1. Ensure duration of stay is available
+    duration_qty = 1
+    if invoice_data.get('length_of_stay') and str(invoice_data['length_of_stay']).isdigit():
+        duration_qty = int(invoice_data['length_of_stay'])
+    elif invoice_data.get('check_in') and invoice_data.get('check_out'):
+        try:
+            d1 = datetime.strptime(invoice_data['check_in'], "%Y/%m/%d")
+            d2 = datetime.strptime(invoice_data['check_out'], "%Y/%m/%d")
+            duration_qty = abs((d2 - d1).days)
+            # Update invoice data if it was missing
+            invoice_data['length_of_stay'] = str(duration_qty)
+        except ValueError:
+            pass # Keep default 1 if date parsing fails
+
+    # 2. Check for the specific transport phrase in remarks (or full text if remarks extraction failed)
+    # Pattern: [T]ransport from guest house to training center <PRICE> PER DAY
+    # Regex handles typo "ransport", "guesthouse" vs "guest house", "center" vs "centre"
+    # and flexible price formats (r300.00, @r300.00, R 300)
+    
+    # Use full text for search to ensure we don't miss it if remarks extraction was incomplete
+    search_text = data.get('full_text', voucher_remarks_text)
+    
+    # Improved regex from testing (Handles optional spaces for mashed text)
+    daily_transport_pattern = r"[T]?ransport\s*from\s*guest\s*house\s*to\s*training\s*cent(?:er|re)\s*(?:[@rR\s]*(\d+(?:[.,]\d{2})?))?\s*PER\s*DAY"
+    daily_transport_match = re.search(daily_transport_pattern, search_text, re.IGNORECASE)
+    
+    if daily_transport_match:
+        # Check if we already added a similar item to avoid duplicates (though description is distinct)
+        existing_daily_transport = next((item for item in invoice_data['line_items'] if "Transport from guest house to training center" in item['description']), None)
+        
+        if not existing_daily_transport:
+            price_group = daily_transport_match.group(1)
+            daily_transport_price = 300.00 # Default as requested
+            
+            if price_group:
+                try:
+                    # Clean and parse price
+                    price_clean = price_group.replace(',', '').strip()
+                    daily_transport_price = float(price_clean)
+                except ValueError:
+                    pass # Use default
+            
+            daily_transport_total = daily_transport_price * duration_qty
+            
+            invoice_data['line_items'].append({
+                'description': 'Daily Transport from guest house to training center',
+                'qty': duration_qty,
+                'unit_price': daily_transport_price,
+                'total': daily_transport_total
+            })
+            
+            # Update flags
+            invoice_data['has_transport'] = True
+            # We don't overwrite transport_rate/total if they were set by another transport item, 
+            # or we could append. For now, let's leave them or update if empty.
+            if not invoice_data.get('transport_rate'):
+                invoice_data['transport_rate'] = f"{daily_transport_price:.2f}"
+                invoice_data['transport_total'] = f"{daily_transport_total:.2f}"
+                invoice_data['transport_description'] = 'Daily Transport from guest house to training center'
 
     # Calculate invoice total
     invoice_data['invoice_total'] = sum(item['total'] for item in invoice_data['line_items'])
